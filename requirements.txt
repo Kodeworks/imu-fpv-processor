@@ -1,0 +1,6 @@
+numpy==1.19.3
+scipy==1.5.4
+matplotlib==3.3.3
+h5py==3.1.0
+pytest==6.2.1
+pywin32==300;sys_platform == 'win32'
