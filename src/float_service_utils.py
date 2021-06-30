@@ -10,10 +10,6 @@ import h5py
 
 
 class ProcessSimulator:
-    """
-    Simply simulate a whole SCALA to Python process, including the usage of buffers that are smaller than the entire
-    data collection.
-    """
     def __init__(self,
                  data_path: str,
                  buffer_size: int = 1_000_000_000,

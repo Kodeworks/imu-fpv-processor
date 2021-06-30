@@ -27,6 +27,7 @@ class FloatService:
         :param name: str, unique ID of float
         :param input: np.memmap/np.ndarray, input buffer
         :param output: np.memmap/np.ndarray, output buffer
+        :param rows:
         :param dev_mode: bool, dev_mode enables features only usable in development
         """
         self.name = name
