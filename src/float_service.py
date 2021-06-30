@@ -6,8 +6,6 @@ Explainations:
 Pose - Both position and orientation of an object
 DOF/dof - Degree of freedom, here used to describe data from one of the six sensor readings (acc x-y-z, gyro x-y-z)
 """
-from src import globals as g
-
 import numpy as np
 from scipy.signal import butter, filtfilt
 from scipy.fft import fft
@@ -15,11 +13,19 @@ from scipy.fft import fft
 import warnings
 import math
 
+# The operating buffer size of FloatService should be a global variable so that it may be set once by some other process
+global n_rows
+
 
 class FloatService:
+    """
+    FloatService serves the purpose of estimating the height and the two angles of the x- and y-axis to the horizontal
+    plane, of an IMU sensor. The FloatService process follows the steps of preprocessing, pose estimation and
+    post processing.
+    """
     def __init__(self, name: str, input, output, dev_mode: bool = False):
         """
-        :param name: str, unique ID of float
+        :param name: str, unique ID of sensor
         :param input: np.memmap/np.ndarray, input buffer
         :param output: np.memmap/np.ndarray, output buffer
         :param dev_mode: bool, dev_mode enables features only usable in development
@@ -34,8 +40,6 @@ class FloatService:
 
         # Index of highest valid index from last time the buffer counter was reset
         self.last_valid = self.input_len - 1
-        # Maximum number of data points to be merged if data merge is turned on
-        self.max_data_merge = 3
         # Miniburst control
         self.use_minibursts = True
         self.miniburst_size = 128
@@ -69,6 +73,7 @@ class FloatService:
         # Information on sensor bias is kept
         self.acc_bias_sliding_window = np.zeros(shape=3, dtype=float)
         self.gyro_bias_sliding_window = np.zeros(shape=2, dtype=float)
+        # The _final-variables are the results from adaptive averaging
         self.acc_bias_final = np.zeros(shape=3, dtype=float)
         self.gyro_bias_final = np.zeros(shape=2, dtype=float)
 
@@ -211,9 +216,11 @@ class FloatService:
 
     def process(self, number_of_rows: int):
         """
+        Tell FloatService to process the next number_of_rows rows in input, starting from last_row + 1.
+        :param number_of_rows: Number of input data rows to be processed.
         Format of output: N rows x [x-angle, y-angle, vertical position]
         """
-        if self.last_row + number_of_rows + 1 <= g.rows:
+        if self.last_row + number_of_rows + 1 <= n_rows:
             start = self.last_row + 1
         else:
             start = 0
@@ -240,6 +247,13 @@ class FloatService:
         self.last_row = end - 1
 
     def minibursts(self, start: int, end: int):
+        """
+        Minibursts are activated when a given burst is of greater size than some threshold. This is to make sure
+        some preprocessing steps like real time calibration of sensors (averaging of sensor input) is performed
+        regularily
+        :param start: Start index of miniburst
+        :param end: End index of miniburst
+        """
         s_i = start
         e_i = min(end, s_i + self.miniburst_size)
         while s_i < end:
@@ -761,7 +775,7 @@ class FloatService:
 
         # Instead of setting acc_bias so that it assumes a mean of -1.0 g in the z-acc sensor, we skip the bias
         # adjustment at this point an revisits it in the form of assuming the proper vertical acceleration of the
-        # float averages at -1.0 in estimate_vertical_acceleration
+        # sensor averages at -1.0 in estimate_vertical_acceleration
         # self.acc_bias_sliding_window[2] = 0.0
 
     def update_adaptive_acc_bias(self):
@@ -968,7 +982,7 @@ class FloatService:
         self.actual_vertical_acceleration[start:end] = 0.0
         self.dampened_vertical_velocity[start:end] = self.vert_vel_bias
         self.dampened_vertical_position[start:end] = self.vert_pos_bias
-        # The scalars self.vertical_acceleration and self.vertical_velocity are left unhandled since
+        # self.vertical_acceleration and self.vertical_velocity are left unhandled since
         # they are calculated before use anyways
 
         # Set dev_mode storage
@@ -1264,11 +1278,11 @@ class Rotations:
     @staticmethod
     def rotation_axis(rotation, abs_rot):
         """
-        Calculate the rotation axis around which the float rotates for some interval where the axis is assumed
+        Calculate the rotation axis around which the sensor rotates for some interval where the axis is assumed
         stationary.
         :param rotation: The recorded rotations in roll, pitch and yaw direction. Can be either actual angles or angular
         velocity.
-        :param abs_rot: If already calculated, the absolute rotation given the three angles.
+        :param abs_rot: The absolute rotation given the three angles.
         :returns: An [x, y, z] directed, normalized rotation axis.
         """
         return np.asarray([rotation[0], rotation[1], rotation[2]])/abs_rot

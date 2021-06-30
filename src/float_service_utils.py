@@ -1,5 +1,4 @@
 from src import float_service as fs
-from src import globals as g
 
 import time
 import sys
@@ -9,11 +8,7 @@ from scipy import interpolate
 import h5py
 
 
-class ScalaSimulator2:
-    """
-    Simply simulate a whole SCALA to Python process, including the usage of buffers that are smaller than the entire
-    data collection.
-    """
+class ProcessSimulator:
     def __init__(self,
                  data_path: str,
                  buffer_size: int = 1_000_000_000,
@@ -26,7 +21,8 @@ class ScalaSimulator2:
         self.data_rows_total = data_rows_total
         self.buffer_size = buffer_size
         self.dev_mode = dev_mode
-        g.rows = buffer_size
+
+        fs.n_rows = buffer_size
 
         self.float_services = {}
         self.last_rows = {}
@@ -36,9 +32,9 @@ class ScalaSimulator2:
         self.all_input_data_pointer = {}
 
         with h5py.File(self.data_path, 'r') as f:
-            self.float_ids = list(f.keys())
-            max_rows = len(f[self.float_ids[0]]['data'])
-            if data_rows_total > len(f[self.float_ids[0]]['data']):
+            self.sensor_ids = list(f.keys())
+            max_rows = len(f[self.sensor_ids[0]]['data'])
+            if data_rows_total > len(f[self.sensor_ids[0]]['data']):
                 print(f'Requested number of rows, {data_rows_total}, is larger than max, {max_rows}. '
                       f'Requested set to max.')
                 self.data_rows_total = max_rows
@@ -46,29 +42,30 @@ class ScalaSimulator2:
                 print(f'Requested buffer size, {self.buffer_size}, is larger than available data,'
                       f' {self.data_rows_total}. Buffer size set to {self.data_rows_total}.')
                 self.buffer_size = self.data_rows_total
-            for k in self.float_ids:
+                fs.n_rows = self.buffer_size
+            for k in self.sensor_ids:
                 self.add_float_service(k)
 
-    def add_float_service(self, float_id):
+    def add_float_service(self, sensor_id):
         with h5py.File(self.data_path, 'r') as f:
-            self.all_input_data[float_id] = np.zeros(shape=[self.data_rows_total, 6], dtype=float)
-            self.inputs[float_id] = np.zeros(shape=[self.buffer_size, 6])
-            self.outputs[float_id] = np.zeros(shape=[self.buffer_size, 3], dtype=float)
-            temp_rows = min(self.data_rows_total, len(f[float_id]['data'][:]))
-            self.all_input_data[float_id][:temp_rows] = f[float_id]['data'][:temp_rows]
-            self.float_services[float_id] = fs.FloatService(name=float_id,
-                                                            input=self.inputs[float_id],
-                                                            output=self.outputs[float_id],
-                                                            dev_mode=self.dev_mode)
+            self.all_input_data[sensor_id] = np.zeros(shape=[self.data_rows_total, 6], dtype=float)
+            self.inputs[sensor_id] = np.zeros(shape=[self.buffer_size, 6])
+            self.outputs[sensor_id] = np.zeros(shape=[self.buffer_size, 3], dtype=float)
+            temp_rows = min(self.data_rows_total, len(f[sensor_id]['data'][:]))
+            self.all_input_data[sensor_id][:temp_rows] = f[sensor_id]['data'][:temp_rows]
+            self.float_services[sensor_id] = fs.FloatService(name=sensor_id,
+                                                             input=self.inputs[sensor_id],
+                                                             output=self.outputs[sensor_id],
+                                                             dev_mode=self.dev_mode)
 
-            self.last_rows[float_id] = -1
-            self.all_input_data_pointer[float_id] = 0
+            self.last_rows[sensor_id] = -1
+            self.all_input_data_pointer[sensor_id] = 0
 
-    def reset_float_service(self, float_id: str, offset: int = 0):
+    def reset_float_service(self, sensor_id: str, offset: int = 0):
         """
-        Reset float service, possibly with an offset in number of data points.
+        Reset FloatService, possibly with an offset in number of data points.
 
-        :param float_id: ID of the float_service to be reset.
+        :param sensor_id: ID of the FloatService to be reset.
         :param offset: Number of bursts skipped.
         """
         if offset*26 >= self.buffer_size:
@@ -76,49 +73,48 @@ class ScalaSimulator2:
                   f'Offset of {offset*26} lines is too large for buffer size of {self.buffer_size}.\n'
                   f'Aborting.\n')
             return
-        self.float_services.pop(float_id)
-        self.inputs.pop(float_id)
-        self.outputs.pop(float_id)
-        self.all_input_data.pop(float_id)
+        self.float_services.pop(sensor_id)
+        self.inputs.pop(sensor_id)
+        self.outputs.pop(sensor_id)
+        self.all_input_data.pop(sensor_id)
 
-        self.add_float_service(float_id=float_id)
-        self.last_rows[float_id] = offset*26 - 1
-        self.all_input_data_pointer[float_id] = offset*26
-        self.float_services[float_id].last_row = offset*26 - 1
+        self.add_float_service(sensor_id=sensor_id)
+        self.last_rows[sensor_id] = offset * 26 - 1
+        self.all_input_data_pointer[sensor_id] = offset * 26
+        self.float_services[sensor_id].last_row = offset * 26 - 1
 
     def all_bursts(self, burst_size: int = 26):
-        print('SCALAInterfaceSim_hdf5:\n'
-              'Processing all requested data...')
+        print('Processing all requested data...')
         start = time.time()
 
         # Progress tracking for visual confirmation
         n_bursts = self.data_rows_total // burst_size
         progress_index = 0
-        progress_bars_per_float = 5
-        total_progress = len(self.float_services)*progress_bars_per_float
+        progress_bars_per_sensor = 5
+        total_progress = len(self.float_services)*progress_bars_per_sensor
         total_bursts = len(self.float_services)*n_bursts
         progress_milestone = total_bursts//total_progress
         p = 0
         for i in range(n_bursts):
-            for k in self.float_ids:
+            for k in self.sensor_ids:
                 if progress_milestone != 0 and p % progress_milestone == 0:
                     sys.stdout.write(self.get_progress_string(progress_index, total_progress))
                     progress_index += 1
-                self.next_burst(float_id=k, burst_size=burst_size)
+                self.next_burst(sensor_id=k, burst_size=burst_size)
                 p += 1
 
         sys.stdout.write(self.get_progress_string(progress_index, total_progress))
         print(f'Data processed in {(time.time()-start):.3f}s')
 
-    def process_buffer(self, float_id: str):
+    def process_buffer(self, sensor_id: str):
         """
         Returns:
             1 - Buffer processed, total data not depleted
             2 - Buffer processed, total data depleted
         """
-        data_status = self.next_burst(float_id=float_id, wait_on_buffer_reuse=False)
+        data_status = self.next_burst(sensor_id=sensor_id, wait_on_buffer_reuse=False)
         while data_status == 1:
-            data_status = self.next_burst(float_id=float_id, wait_on_buffer_reuse=True)
+            data_status = self.next_burst(sensor_id=sensor_id, wait_on_buffer_reuse=True)
         if data_status == 2:
             # Buffer is processed but data is not depleted
             return 1
@@ -126,12 +122,11 @@ class ScalaSimulator2:
             # Buffer is processed and data is depleted
             return 2
 
-    def all_bursts_single_float(self, float_id: str, offset: int = 0, burst_size: int = 1000,
-                                print_progress: bool = False):
+    def all_bursts_single_float_service(self, sensor_id: str, offset: int = 0, burst_size: int = 1000,
+                                        print_progress: bool = False):
         if print_progress:
-            print('SCALAInterfaceSim_hdf5:\n'
-                  f'Processing {self.data_rows_total} data rows with buffer size '
-                  f'{self.buffer_size} for float {float_id}')
+            print(f'Processing {self.data_rows_total} data rows with buffer size '
+                  f'{self.buffer_size} for sensor {sensor_id}')
         start = time.time()
 
         # Progress tracking for visual confirmation
@@ -147,15 +142,15 @@ class ScalaSimulator2:
                 if print_progress:
                     sys.stdout.write(self.get_progress_string(progress_index, total_progress))
                 progress_index += 1
-            self.next_burst(float_id=float_id, burst_size=burst_size)
+            self.next_burst(sensor_id=sensor_id, burst_size=burst_size)
             p += 1
 
         if print_progress:
             sys.stdout.write(self.get_progress_string(progress_index, total_progress))
         if print_progress:
-            print(f'Data from {float_id} processed in {(time.time()-start):.3f}s')
+            print(f'Data from {sensor_id} processed in {(time.time() - start):.3f}s')
 
-    def next_burst(self, float_id: str, burst_size: int = 26, wait_on_buffer_reuse: bool = False):
+    def next_burst(self, sensor_id: str, burst_size: int = 26, wait_on_buffer_reuse: bool = False):
         """
         Returns:
             1 - burst processed
@@ -165,31 +160,31 @@ class ScalaSimulator2:
         # TODO: Solve this as well
         try:
             # Check if entire burst can be added to buffer
-            if self.last_rows[float_id] + 1 + burst_size <= self.buffer_size:
+            if self.last_rows[sensor_id] + 1 + burst_size <= self.buffer_size:
                 # Add burst
-                self.inputs[float_id][self.last_rows[float_id]+1: self.last_rows[float_id]+1+burst_size] =\
-                    self.all_input_data[float_id][self.all_input_data_pointer[float_id]:
-                                                  self.all_input_data_pointer[float_id] + burst_size]
-                self.all_input_data_pointer[float_id] += burst_size
+                self.inputs[sensor_id][self.last_rows[sensor_id] + 1: self.last_rows[sensor_id] + 1 + burst_size] = \
+                    self.all_input_data[sensor_id][self.all_input_data_pointer[sensor_id]:
+                                                  self.all_input_data_pointer[sensor_id] + burst_size]
+                self.all_input_data_pointer[sensor_id] += burst_size
                 # Process
-                self.float_services[float_id].process(number_of_rows=burst_size)
-                self.last_rows[float_id] += burst_size
+                self.float_services[sensor_id].process(number_of_rows=burst_size)
+                self.last_rows[sensor_id] += burst_size
             else:
                 if wait_on_buffer_reuse:
                     return 2
-                self.inputs[float_id][0: burst_size] = \
-                    self.all_input_data[float_id][self.all_input_data_pointer[float_id]:
-                                                  self.all_input_data_pointer[float_id] + burst_size]
-                self.all_input_data_pointer[float_id] += burst_size
+                self.inputs[sensor_id][0: burst_size] = \
+                    self.all_input_data[sensor_id][self.all_input_data_pointer[sensor_id]:
+                                                  self.all_input_data_pointer[sensor_id] + burst_size]
+                self.all_input_data_pointer[sensor_id] += burst_size
                 # Process
-                self.float_services[float_id].process(number_of_rows=burst_size)
-                self.last_rows[float_id] = burst_size - 1
-                if self.all_input_data_pointer[float_id] + burst_size >= self.data_rows_total:
-                    self.last_rows[float_id] = self.data_rows_total - self.all_input_data_pointer[float_id] - 1
+                self.float_services[sensor_id].process(number_of_rows=burst_size)
+                self.last_rows[sensor_id] = burst_size - 1
+                if self.all_input_data_pointer[sensor_id] + burst_size >= self.data_rows_total:
+                    self.last_rows[sensor_id] = self.data_rows_total - self.all_input_data_pointer[sensor_id] - 1
                     return 3
         except ValueError as e:
             print(e)
-            print(self.last_rows[float_id], burst_size, self.buffer_size, self.all_input_data_pointer[float_id])
+            print(self.last_rows[sensor_id], burst_size, self.buffer_size, self.all_input_data_pointer[sensor_id])
         return 1
 
     @staticmethod
@@ -217,44 +212,44 @@ class ScalaSimulator2:
 
 class FloatServiceHandler:
     def __init__(self, buffer_sizes: int):
-        g.rows = buffer_sizes
+        fs.n_rows = buffer_sizes
         self.float_services = {}
-        self.float_ids = []
+        self.sensor_ids = []
         self.input_buffers = {}
         self.output_buffers = {}
         self.last_line_counters = {}
 
-    def process(self, float_id: str, burst):
-        if float_id in self.float_ids:
-            self._process(float_id=float_id, burst=burst)
+    def process(self, sensor_id: str, burst):
+        if sensor_id in self.sensor_ids:
+            self._process(sensor_id=sensor_id, burst=burst)
 
         else:
-            self.add_float_service(float_id=float_id)
-            self._process(float_id=float_id, burst=burst)
+            self.add_float_service(sensor_id=sensor_id)
+            self._process(sensor_id=sensor_id, burst=burst)
 
-    def _process(self, float_id: str, burst):
-        if self.last_line_counters[float_id] + len(burst) + 1 <= g.rows:
-            self.input_buffers[float_id][self.last_line_counters[float_id] + 1:
-                                         self.last_line_counters[float_id] + 1 + len(burst)] \
+    def _process(self, sensor_id: str, burst):
+        if self.last_line_counters[sensor_id] + len(burst) + 1 <= fs.n_rows:
+            self.input_buffers[sensor_id][self.last_line_counters[sensor_id] + 1:
+                                         self.last_line_counters[sensor_id] + 1 + len(burst)] \
                 = burst
-            self.last_line_counters[float_id] += len(burst)
+            self.last_line_counters[sensor_id] += len(burst)
         else:
-            self.last_line_counters[float_id] = len(burst) - 1
-            self.input_buffers[float_id][0:len(burst)] = burst
+            self.last_line_counters[sensor_id] = len(burst) - 1
+            self.input_buffers[sensor_id][0:len(burst)] = burst
 
-        self.float_services[float_id].process(number_of_rows=len(burst))
+        self.float_services[sensor_id].process(number_of_rows=len(burst))
 
-    def add_float_service(self, float_id: str):
-        self.input_buffers[float_id] = np.zeros(shape=[g.rows, 6], dtype=float)
-        self.output_buffers[float_id] = np.zeros(shape=[g.rows, 3], dtype=float)
-        self.last_line_counters[float_id] = -1
-        self.float_ids.append(float_id)
-        new_float_service = fs.FloatService(name=float_id,
-                                            input=self.input_buffers[float_id],
-                                            output=self.output_buffers[float_id],
+    def add_float_service(self, sensor_id: str):
+        self.input_buffers[sensor_id] = np.zeros(shape=[fs.n_rows, 6], dtype=float)
+        self.output_buffers[sensor_id] = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+        self.last_line_counters[sensor_id] = -1
+        self.sensor_ids.append(sensor_id)
+        new_float_service = fs.FloatService(name=sensor_id,
+                                            input=self.input_buffers[sensor_id],
+                                            output=self.output_buffers[sensor_id],
                                             dev_mode=True)
 
-        self.float_services[float_id] = new_float_service
+        self.float_services[sensor_id] = new_float_service
 
 
 class SensorDataRow:
@@ -266,7 +261,7 @@ class SensorDataRow:
         s - IMU data
         p - skip single element
         """
-        self.float_id = None
+        self.sensor_id = None
         self.timestamp = None
         self.imu_data = None
 
@@ -289,7 +284,7 @@ class SensorDataRow:
                                               order=order)
 
     def set_id(self, sequence: list):
-        self.float_id = sequence[0]
+        self.sensor_id = sequence[0]
 
     def attempt_parse_timestamp(self, sequence: list):
         try:
@@ -336,13 +331,13 @@ class SensorDataRow:
 
         #
         # try:
-        #     float_id = int(split_string[0])
+        #     sensor_id = int(split_string[0])
         # except ValueError as e:
         #     return None
         # try:
 
     def clear_data(self):
-        self.float_id = None
+        self.sensor_id = None
         self.timestamp = None
         self.imu_data = None
         self. successful_data_extraction = True
@@ -350,15 +345,15 @@ class SensorDataRow:
 
 class SensorDataBurst:
     def __init__(self):
-        self.float_id = None
+        self.sensor_id = None
         self.imu_data = []
         self.timestamps = []
 
     def add_data_row(self, data_row: SensorDataRow):
-        if self.float_id is None:
-            self.float_id = data_row.float_id
+        if self.sensor_id is None:
+            self.sensor_id = data_row.sensor_id
 
-        if data_row.float_id == self.float_id:
+        if data_row.sensor_id == self.sensor_id:
             self.timestamps.append(data_row.timestamp)
             self.imu_data.append(data_row.imu_data)
             return True
@@ -366,7 +361,7 @@ class SensorDataBurst:
             return False
 
     def clear_data(self):
-        self.float_id = None
+        self.sensor_id = None
         self.imu_data = []
         self.timestamps = []
 
@@ -385,17 +380,17 @@ class SensorDataset:
 
         self.output_dict = {}
 
-        self.max_floats = 256
+        self.max_sensors = 256
 
-        self.max_floats_exeeded = False
+        self.max_sensors_exeeded = False
 
     def add_burst(self, burst: SensorDataBurst):
-        if burst.float_id in list(self.imu_data.keys()):
-            self.imu_data[burst.float_id] += burst.imu_data
-            self.timestamps[burst.float_id] += burst.timestamps
+        if burst.sensor_id in list(self.imu_data.keys()):
+            self.imu_data[burst.sensor_id] += burst.imu_data
+            self.timestamps[burst.sensor_id] += burst.timestamps
         else:
-            self.imu_data[burst.float_id] = []
-            self.timestamps[burst.float_id] = []
+            self.imu_data[burst.sensor_id] = []
+            self.timestamps[burst.sensor_id] = []
             self.add_burst(burst=burst)
 
     def read_input_from_csv_file(self, file_path: str, sep: str = '\t', order: str = 'its'):
@@ -422,7 +417,7 @@ class SensorDataset:
 
         for key in list(self.imu_data.keys()):
             self.imu_data[key] = np.array(self.imu_data[key])
-            print(f'Read {len(self.imu_data[key])} from float {key}.')
+            print(f'Read {len(self.imu_data[key])} from sensor {key}.')
 
     def read_input_from_hdf5_file(self, file_path: str):
         with h5py.File(name=file_path, mode='r') as hdf5_file:
@@ -451,14 +446,14 @@ class SensorDataset:
 
         with h5py.File(name=file_path, mode='w') as new_file:
             for key in list(self.imu_data.keys()):
-                float_specific_group = new_file.create_group(name=key)
-                float_specific_group.create_dataset(name='data', data=self.imu_data[key])
+                sensor_specific_group = new_file.create_group(name=key)
+                sensor_specific_group.create_dataset(name='data', data=self.imu_data[key])
 
                 # In order to save timestamps in .hdf5-format, None's are replaced by 0's
                 temp_timestamps = [val or 0 for val in self.timestamps[key]]
                 # If it turned out that all timestamps were None, do nothing
                 if not max(temp_timestamps) == 0:
-                    float_specific_group.create_dataset(name='timestamps', data=temp_timestamps)
+                    sensor_specific_group.create_dataset(name='timestamps', data=temp_timestamps)
 
     def write_output_to_hdf5_file(self, output_path: str):
         if not self.output_dict:
@@ -466,9 +461,9 @@ class SensorDataset:
 
         with h5py.File(name=output_path, mode='w') as output_file:
             for key in list(self.output_dict.keys()):
-                float_specific_group = output_file.create_group(key)
-                float_specific_group.create_dataset(name='data', data=self.output_dict[key])
-                float_specific_group.create_dataset(name='timestamps', data=self.output_dict[key])
+                sensor_specific_group = output_file.create_group(key)
+                sensor_specific_group.create_dataset(name='data', data=self.output_dict[key])
+                sensor_specific_group.create_dataset(name='timestamps', data=self.output_dict[key])
 
     def interpolate_input_imu_data_to_length_of_longest_dataset(self):
         if not self.imu_data:
@@ -566,27 +561,27 @@ class SensorDataset:
             fs_temp = fs.FloatService(name='temp',
                                       input=self.imu_data[key],
                                       output=self.output_dict[key])
-            g.rows = len(self.imu_data[key])
+            fs.n_rows = len(self.imu_data[key])
             fs_temp.process(number_of_rows=len(self.imu_data[key]))
 
     def confirm_validity_of_internal_data(self):
-        if len(self.imu_data) > self.max_floats:
-            self.max_floats_exeeded = True
+        if len(self.imu_data) > self.max_sensors:
+            self.max_sensors_exeeded = True
             return False
         else:
-            self.max_floats_exeeded = False
+            self.max_sensors_exeeded = False
 
         return True
 
     def print_invalidity_of_internal_data(self):
-        if self.max_floats_exeeded:
-            print(f'Max number of floats - {self.max_floats} - exeeded.')
+        if self.max_sensors_exeeded:
+            print(f'Max number of sensors - {self.max_sensors} - exeeded.')
 
     def reset_dataset(self):
         self.imu_data = {}
         self.timestamps = {}
         self.output_dict = {}
 
-        self.max_floats_exeeded = False
+        self.max_sensors_exeeded = False
 
         print('All data wiped and variables reset.')
