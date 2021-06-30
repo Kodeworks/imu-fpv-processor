@@ -50,7 +50,7 @@ import src.globals as g
 #
 #     def _polynomial_regression(x: np.ndarray, y: np.ndarray, deg: int, dof: int = 0):
 #         """
-#         This method uses numpy.polyfit() to produce polynomials of some degree for individual bursts of the SCALA
+#         This method uses numpy.polyfit() to produce polynomials of some degree for individual bursts of the sensor
 #         input.
 #         It returns an entire column of data after having produced all the burst polynomials.
 #         """
@@ -103,18 +103,18 @@ import src.globals as g
 #
 #     # Test begins
 #
-#     # Create SCALA interface, fill buffers of requested size
-#     sis = fsdu.ScalaSimulator2(data_path=path, data_rows_total=n_rows, buffer_size=n_rows, dev_mode=True)
+#     # Create process, fill buffers of requested size
+#     sis = fsdu.ProcessSimulator(data_path=path, data_rows_total=n_rows, buffer_size=n_rows, dev_mode=True)
 #
-#     # Focusing on data from a single float
-#     float_id = f_id
+#     # Focusing on data from a single sensor
+#     sensor_id = f_id
 #
 #     # Process data (including preprocessing)
-#     sis.all_bursts_single_float(float_id=float_id)
+#     sis.all_bursts_single_sensor(sensor_id=sensor_id)
 #
 #     # Save raw and processed input
-#     input_raw = sis.float_services[float_id].input
-#     input_cleaned = sis.float_services[float_id].processed_input
+#     input_raw = sis.float_services[sensor_id].input
+#     input_cleaned = sis.float_services[sensor_id].processed_input
 #
 #     # Until timestamps are provided, we use indices as x-values:
 #     x_indices = np.arange(0, len(input_raw), step=1, dtype=int)
@@ -177,9 +177,6 @@ import src.globals as g
 #     #     self.passed_messages.append(f'{self.tc[1]}PASSED{self.tc[0]}\n'
 #     #                                 'clean_data_test()\n'
 #     #                                 f'{dc_tests_passed}/{data_cleaning_tests} tests passed.\n')
-#
-#     # Apply the clean_data() method from FloatServiceDev, and measure std dev again
-#     # If the std dev has sunk, the test is passed
 
 
 def test_nan_handling():
@@ -411,10 +408,10 @@ def test_boost_dampeners():
 def test_set_position_average_weights():
     print('----set_position_average_weights_test()----')
     data_size = 100
-    float_input = np.zeros(shape=[data_size, 6])
-    float_output = np.zeros(shape=[data_size, 3])
+    sensor_input = np.zeros(shape=[data_size, 6])
+    sensor_output = np.zeros(shape=[data_size, 3])
     name = 'copernicus'
-    float_service = fs.FloatService(name=name, input=float_input, output=float_output, dev_mode=True)
+    float_service = fs.FloatService(name=name, input=sensor_input, output=sensor_output, dev_mode=True)
     pos_mean_window_len = float_service.n_points_for_pos_mean
 
     assert pos_mean_window_len == len(float_service.vert_pos_average_weights)
@@ -438,13 +435,13 @@ def test_kalman_project_state():
 
     data_size = 100
 
-    # 1 - Still, horizontal float
+    # 1 - Still, horizontal sensor
     kalman_project_state_tests += 1
-    float_name = 'copernicus_01'
+    sensor_name = 'copernicus_01'
     input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
     output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
 
-    float_service = fs.FloatService(name=float_name, input=input_buffers, output=output_buffers, dev_mode=True)
+    float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off gyroscope mean adjustment
     float_service.points_between_gyro_bias_update = np.inf
 
@@ -456,7 +453,7 @@ def test_kalman_project_state():
         # This test expects the acceleration induced angles to be 0.0
         if float_service.dev_gyro_state[i, 0] != 0.0 \
                 or float_service.dev_gyro_state[i, 1] != 0.0:
-            err_msg += '- 1. Still, horizontal float\n'
+            err_msg += '- 1. Still, horizontal sensor\n'
             passed = False
             break
     if passed:
@@ -464,10 +461,10 @@ def test_kalman_project_state():
 
     # 2 - Constant angular velocity, single axis
     kalman_project_state_tests += 1
-    float_name = 'copernicus_02'
+    sensor_name = 'copernicus_02'
     input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
     output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
-    float_service = fs.FloatService(name=float_name, input=input_buffers, output=output_buffers, dev_mode=True)
+    float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off gyroscope mean adjustment
     float_service.points_between_gyro_bias_update = np.inf
 
@@ -508,13 +505,13 @@ def test_kalman_z():
     # and does not influence sampling rate etc
     timestamps = np.linspace(0.0, 10, data_size)
 
-    # 1 - Still, horizontal float
+    # 1 - Still, horizontal sensor
     kalman_z_tests += 1
-    float_name = 'copernicus_01'
+    sensor_name = 'copernicus_01'
     g.rows = data_size
     input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
     output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
-    float_service = fs.FloatService(name=float_name, input=input_buffers, output=output_buffers, dev_mode=True)
+    float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off acceleration mean adjustment
     float_service.points_between_acc_bias_update = np.inf
 
@@ -526,19 +523,19 @@ def test_kalman_z():
         # This test expects the acceleration induced angles to be 0.0
         if float_service.dev_acc_state[i, 0] != 0.0 \
                 or float_service.dev_acc_state[i, 1] != 0.0:
-            err_msg += '- 1. Still, horizontal float\n'
+            err_msg += '- 1. Still, horizontal sensor\n'
             passed = False
             break
     if passed:
         kalman_z_passed += 1
 
-    # 2 - Moving float
+    # 2 - Moving sensor
     kalman_z_tests += 1
-    float_name = 'copernicus_02'
+    sensor_name = 'copernicus_02'
     input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
     output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
     g.rows = data_size
-    float_service = fs.FloatService(name=float_name, input=input_buffers, output=output_buffers, dev_mode=True)
+    float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off acceleration mean adjustment
     float_service.points_between_acc_bias_update = np.inf
     # Make sure the Kalman filter is activated at every data row
@@ -555,7 +552,7 @@ def test_kalman_z():
         if abs(float_service.input[i, 0]) > abs(float_service.input[i, 1]) and \
                 abs(float_service.dev_acc_state[i, 0]) > \
                 abs(float_service.dev_acc_state[i, 1]):
-            err_msg += '- 2.1 Moving float, absolute value\n'
+            err_msg += '- 2.1 Moving sensor, absolute value\n'
             passed = False
             print(i)
             break

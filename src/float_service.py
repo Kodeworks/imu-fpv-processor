@@ -24,10 +24,9 @@ class FloatService:
     """
     def __init__(self, name: str, input, output, dev_mode: bool = False):
         """
-        :param name: str, unique ID of float
+        :param name: str, unique ID of sensor
         :param input: np.memmap/np.ndarray, input buffer
         :param output: np.memmap/np.ndarray, output buffer
-        :param rows:
         :param dev_mode: bool, dev_mode enables features only usable in development
         """
         self.name = name
@@ -775,7 +774,7 @@ class FloatService:
 
         # Instead of setting acc_bias so that it assumes a mean of -1.0 g in the z-acc sensor, we skip the bias
         # adjustment at this point an revisits it in the form of assuming the proper vertical acceleration of the
-        # float averages at -1.0 in estimate_vertical_acceleration
+        # sensor averages at -1.0 in estimate_vertical_acceleration
         # self.acc_bias_sliding_window[2] = 0.0
 
     def update_adaptive_acc_bias(self):
@@ -982,7 +981,7 @@ class FloatService:
         self.actual_vertical_acceleration[start:end] = 0.0
         self.dampened_vertical_velocity[start:end] = self.vert_vel_bias
         self.dampened_vertical_position[start:end] = self.vert_pos_bias
-        # The scalars self.vertical_acceleration and self.vertical_velocity are left unhandled since
+        # self.vertical_acceleration and self.vertical_velocity are left unhandled since
         # they are calculated before use anyways
 
         # Set dev_mode storage
@@ -1278,7 +1277,7 @@ class Rotations:
     @staticmethod
     def rotation_axis(rotation, abs_rot):
         """
-        Calculate the rotation axis around which the float rotates for some interval where the axis is assumed
+        Calculate the rotation axis around which the sensor rotates for some interval where the axis is assumed
         stationary.
         :param rotation: The recorded rotations in roll, pitch and yaw direction. Can be either actual angles or angular
         velocity.
