@@ -9,7 +9,7 @@ from scipy import interpolate
 import h5py
 
 
-class ScalaSimulator2:
+class ProcessSimulator:
     """
     Simply simulate a whole SCALA to Python process, including the usage of buffers that are smaller than the entire
     data collection.

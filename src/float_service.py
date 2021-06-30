@@ -17,6 +17,11 @@ import math
 
 
 class FloatService:
+    """
+    FloatService serves the purpose of estimating the height and the two angles of the x- and y-axis to the horizontal
+    plane, of an IMU sensor. The FloatService process follows the steps of preprocessing, pose estimation and
+    post processing.
+    """
     def __init__(self, name: str, input, output, dev_mode: bool = False):
         """
         :param name: str, unique ID of float
@@ -34,8 +39,6 @@ class FloatService:
 
         # Index of highest valid index from last time the buffer counter was reset
         self.last_valid = self.input_len - 1
-        # Maximum number of data points to be merged if data merge is turned on
-        self.max_data_merge = 3
         # Miniburst control
         self.use_minibursts = True
         self.miniburst_size = 128
@@ -69,6 +72,7 @@ class FloatService:
         # Information on sensor bias is kept
         self.acc_bias_sliding_window = np.zeros(shape=3, dtype=float)
         self.gyro_bias_sliding_window = np.zeros(shape=2, dtype=float)
+        # The _final-variables are the results from adaptive averaging
         self.acc_bias_final = np.zeros(shape=3, dtype=float)
         self.gyro_bias_final = np.zeros(shape=2, dtype=float)
 
@@ -211,6 +215,8 @@ class FloatService:
 
     def process(self, number_of_rows: int):
         """
+        Tell FloatService to process the next number_of_rows rows in input, starting from last_row + 1.
+        :param number_of_rows: Number of input data rows to be processed.
         Format of output: N rows x [x-angle, y-angle, vertical position]
         """
         if self.last_row + number_of_rows + 1 <= g.rows:
@@ -240,6 +246,13 @@ class FloatService:
         self.last_row = end - 1
 
     def minibursts(self, start: int, end: int):
+        """
+        Minibursts are activated when a given burst is of greater size than some threshold. This is to make sure
+        some preprocessing steps like real time calibration of sensors (averaging of sensor input) is performed
+        regularily
+        :param start: Start index of miniburst
+        :param end: End index of miniburst
+        """
         s_i = start
         e_i = min(end, s_i + self.miniburst_size)
         while s_i < end:
