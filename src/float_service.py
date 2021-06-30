@@ -6,14 +6,15 @@ Explainations:
 Pose - Both position and orientation of an object
 DOF/dof - Degree of freedom, here used to describe data from one of the six sensor readings (acc x-y-z, gyro x-y-z)
 """
-from src import globals as g
-
 import numpy as np
 from scipy.signal import butter, filtfilt
 from scipy.fft import fft
 
 import warnings
 import math
+
+# The operating buffer size of FloatService should be a global variable so that it may be set once by some other process
+global n_rows
 
 
 class FloatService:
@@ -219,7 +220,7 @@ class FloatService:
         :param number_of_rows: Number of input data rows to be processed.
         Format of output: N rows x [x-angle, y-angle, vertical position]
         """
-        if self.last_row + number_of_rows + 1 <= g.rows:
+        if self.last_row + number_of_rows + 1 <= n_rows:
             start = self.last_row + 1
         else:
             start = 0

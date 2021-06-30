@@ -1,5 +1,4 @@
 from src import float_service as fs
-from src import globals as g
 
 import time
 import sys
@@ -22,7 +21,8 @@ class ProcessSimulator:
         self.data_rows_total = data_rows_total
         self.buffer_size = buffer_size
         self.dev_mode = dev_mode
-        g.rows = buffer_size
+
+        fs.n_rows = buffer_size
 
         self.float_services = {}
         self.last_rows = {}
@@ -42,6 +42,7 @@ class ProcessSimulator:
                 print(f'Requested buffer size, {self.buffer_size}, is larger than available data,'
                       f' {self.data_rows_total}. Buffer size set to {self.data_rows_total}.')
                 self.buffer_size = self.data_rows_total
+                fs.n_rows = self.buffer_size
             for k in self.sensor_ids:
                 self.add_float_service(k)
 
@@ -211,7 +212,7 @@ class ProcessSimulator:
 
 class FloatServiceHandler:
     def __init__(self, buffer_sizes: int):
-        g.rows = buffer_sizes
+        fs.n_rows = buffer_sizes
         self.float_services = {}
         self.sensor_ids = []
         self.input_buffers = {}
@@ -227,7 +228,7 @@ class FloatServiceHandler:
             self._process(sensor_id=sensor_id, burst=burst)
 
     def _process(self, sensor_id: str, burst):
-        if self.last_line_counters[sensor_id] + len(burst) + 1 <= g.rows:
+        if self.last_line_counters[sensor_id] + len(burst) + 1 <= fs.n_rows:
             self.input_buffers[sensor_id][self.last_line_counters[sensor_id] + 1:
                                          self.last_line_counters[sensor_id] + 1 + len(burst)] \
                 = burst
@@ -239,8 +240,8 @@ class FloatServiceHandler:
         self.float_services[sensor_id].process(number_of_rows=len(burst))
 
     def add_float_service(self, sensor_id: str):
-        self.input_buffers[sensor_id] = np.zeros(shape=[g.rows, 6], dtype=float)
-        self.output_buffers[sensor_id] = np.zeros(shape=[g.rows, 3], dtype=float)
+        self.input_buffers[sensor_id] = np.zeros(shape=[fs.n_rows, 6], dtype=float)
+        self.output_buffers[sensor_id] = np.zeros(shape=[fs.n_rows, 3], dtype=float)
         self.last_line_counters[sensor_id] = -1
         self.sensor_ids.append(sensor_id)
         new_float_service = fs.FloatService(name=sensor_id,
@@ -560,7 +561,7 @@ class SensorDataset:
             fs_temp = fs.FloatService(name='temp',
                                       input=self.imu_data[key],
                                       output=self.output_dict[key])
-            g.rows = len(self.imu_data[key])
+            fs.n_rows = len(self.imu_data[key])
             fs_temp.process(number_of_rows=len(self.imu_data[key]))
 
     def confirm_validity_of_internal_data(self):

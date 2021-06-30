@@ -6,7 +6,6 @@ from scipy.signal import butter, filtfilt
 
 import src.float_service as fs
 import src.float_service_utils as fsdu
-import src.globals as g
 
 # def test_low_pass_filter_input():
 #     # TODO: FIX test. processed_input and input cannot be compared the way it is being done
@@ -319,7 +318,7 @@ def test_discard_burst():
     mock_input[:] = float('nan')
     output = np.zeros(shape=[data_size, 3], dtype=float)
     float_service = fs.FloatService(name=name, input=mock_input, output=output)
-    g.rows = data_size
+    fs.n_rows = data_size
     for i in range(data_size//burst_size):
         float_service.process(number_of_rows=burst_size)
 
@@ -434,12 +433,13 @@ def test_kalman_project_state():
     err_msg = ''
 
     data_size = 100
+    fs.n_rows = data_size
 
     # 1 - Still, horizontal sensor
     kalman_project_state_tests += 1
     sensor_name = 'copernicus_01'
-    input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
+    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
+    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
 
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off gyroscope mean adjustment
@@ -462,8 +462,8 @@ def test_kalman_project_state():
     # 2 - Constant angular velocity, single axis
     kalman_project_state_tests += 1
     sensor_name = 'copernicus_02'
-    input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
+    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
+    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off gyroscope mean adjustment
     float_service.points_between_gyro_bias_update = np.inf
@@ -508,9 +508,9 @@ def test_kalman_z():
     # 1 - Still, horizontal sensor
     kalman_z_tests += 1
     sensor_name = 'copernicus_01'
-    g.rows = data_size
-    input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
+    fs.n_rows = data_size
+    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
+    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off acceleration mean adjustment
     float_service.points_between_acc_bias_update = np.inf
@@ -532,9 +532,10 @@ def test_kalman_z():
     # 2 - Moving sensor
     kalman_z_tests += 1
     sensor_name = 'copernicus_02'
-    input_buffers = np.zeros(shape=[g.rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[g.rows, 3], dtype=float)
-    g.rows = data_size
+    fs.n_rows = data_size
+    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
+    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+    fs.n_rows = data_size
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off acceleration mean adjustment
     float_service.points_between_acc_bias_update = np.inf
@@ -1186,6 +1187,7 @@ def test_rotate_system():
 
     ###########################################################
 
-    print(error_message)
+    if not passed_rotation_tests == rotation_tests:
+        print(error_message)
     print('_______ rotate_system_test() ended _______\n')
     assert passed_rotation_tests == rotation_tests
