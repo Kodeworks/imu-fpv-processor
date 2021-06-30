@@ -1281,7 +1281,7 @@ class Rotations:
         stationary.
         :param rotation: The recorded rotations in roll, pitch and yaw direction. Can be either actual angles or angular
         velocity.
-        :param abs_rot: If already calculated, the absolute rotation given the three angles.
+        :param abs_rot: The absolute rotation given the three angles.
         :returns: An [x, y, z] directed, normalized rotation axis.
         """
         return np.asarray([rotation[0], rotation[1], rotation[2]])/abs_rot
