@@ -5,7 +5,7 @@ from scipy.signal import butter, filtfilt
 # from src import float_service as fs, float_service_dev_utils as fsdu, globals as g
 
 import src.float_service as fs
-import src.float_service_dev_utils as fsdu
+import src.float_service_utils as fsdu
 import src.globals as g
 
 # def test_low_pass_filter_input():
