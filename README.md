@@ -2,7 +2,6 @@
 
 This repository largely revolves around the class named FloatService. FloatService serves the purpose of estimating the
 height and the two angles of the x- and y-axis to the horizontal plane, of an IMU sensor.<br>
-The FloatService process follows the steps of **preprocessing**, **pose estimation** and **post processing**.
 
 
 # Setup
@@ -33,10 +32,18 @@ Download Python from [Python's active releases](https://www.python.org/downloads
 <br>
 
 # FloatService
-FloatService receives data rows of [accelX, accelY, accelZ, gyroX, gyroY]. The data is placed in FloatService.input,
-which is typically a np.ndarray or np.memmap.<br>
-FloatService estimates the pose of the sensor, and places an equal number of estimated [angleX, angleY, height] data
-rows in FloatService.output, to the number of given input data rows.
+FloatService receives data rows of **[accelX, accelY, accelZ, gyroX, gyroY]**. The input data is placed in 
+FloatService.input.<br>
+FloatService estimates the pose of the sensor, and places an equal number of estimated **[angleX, angleY, height]** data
+rows in FloatService.output, to the number of given input data rows.<br>
+The goal of FloatService is ultimately to observe how a floating device moves while sitting in potentially rough
+sea.<br>
+After initialization, the FloatService.process()-call follows the steps of **preprocessing**, **pose estimation** and
+**post processing**.
+
+## Initialization
+FloatService(name: str, input, output, dev_mode: bool = False) expects references to input and output, which should be
+a zero initialized np.ndarray, np.matrix, np.memmap or any numpy matrix-like container.
 
 ## Preprocessing
 ### Sensor bias update
