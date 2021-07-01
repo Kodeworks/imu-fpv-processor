@@ -4,7 +4,7 @@ This repository largely revolves around the class named FloatService. FloatServi
 height and the two angles of the x- and y-axis to the horizontal plane, of an IMU sensor.<br>
 
 
-# Setup
+## Setup
 
 ### Windows
 Download Python from [Python's active releases](https://www.python.org/downloads/). We currently run **Python 3.8**.
@@ -25,10 +25,15 @@ Download Python from [Python's active releases](https://www.python.org/downloads
 `source venv/bin/activate`<br>
 `pip install -r requirements.txt`<br>
 
-# Testing
-  `pytest test\test_float_service.py`
-<br>
-<br>
+## Testing
+Unit tests are run by running  
+
+`pytest test\test_float_service.py`
+
+## Processing and visualizing datasets
+Running float_service_stats.py will use a dataset that needs to be put in the data folder beforehand. This dataset can
+be downloaded from 
+[this public drive](https://drive.google.com/drive/folders/1qK7dj_Xnk2Dm116jCTDztkMFMz2Flqn7?usp=sharing).
 <br>
 
 # FloatService
@@ -93,10 +98,5 @@ due to the average-correction being performed in height estimation, which tends 
 <br>
 <br>
 
-# Contribution guidelines ###
-* Writing tests
-* Code review
-* Other guidelines
-
-## Who do I talk to? ##
+## Contact us ##
 Any questions may be directed to [simen@kodeworks.no](mailto:simen@kodeworks.no).

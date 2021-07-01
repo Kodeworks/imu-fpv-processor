@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.fft import fft
 
 from src.float_service import FloatService
+from src.float_service_utils import ProcessSimulator
 
 
 class FloatServiceStats:
@@ -16,16 +17,7 @@ class FloatServiceStats:
         plt.legend(handles=plot_handles)
 
     @staticmethod
-    def plot_everything(float_service):
-        """
-        This method plots the following from a FloatService-object:
-        1. Biases
-        2. Output - two angles and vertical position
-        3. Vertical position - dampened, averaged and bias
-        4. Vertical velocity - dampened, averaged and bias
-        5. x_angle and y_angle angles - Gyro based, acc based and Kalman estimated
-        6. Vertical acceleration and bank angle, z-acceleration - raw and processed
-        """
+    def plot_biases_in_float_service(float_service: FloatService):
         plt.figure()
         plt.title('Bias in sensors and derived values')
         gyro_bias_x, = plt.plot(float_service.gyro_bias_array[:, 0],
@@ -53,14 +45,8 @@ class FloatServiceStats:
         plt.legend(handles=[gyro_bias_x, gyro_bias_y, x_acc_bias,
                             y_acc_bias, z_acc_bias, vert_vel_bias, vert_pos_bias])
 
-        # plt.figure()
-        # plt.title('Final output')
-        # x_axis_rot, = plt.plot(float_service.output[:, 0], c='r', label='X-axis rotation')
-        # y_axis_rot, = plt.plot(float_service.output[:, 1], c='g', label='Y-axis rotation')
-        # z_position, = plt.plot(float_service.output[:, 2], c='b', label='Z-position')
-        # plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
-        # plt.legend(handles=[x_axis_rot, y_axis_rot, z_position])
-
+    @staticmethod
+    def plot_vertical_position(float_service: FloatService):
         plt.figure()
         plt.title('Vertical position')
         z_pos_dampened, = plt.plot(float_service.dampened_vertical_position, c='b', label='Dampened vert. pos')
@@ -69,6 +55,8 @@ class FloatServiceStats:
         plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_pos_dampened, z_pos, z_pos_bias])
 
+    @staticmethod
+    def plot_vertical_velocity(float_service: FloatService):
         plt.figure()
         plt.title('Vertical velocity')
         z_acc, = plt.plot(float_service.actual_vertical_acceleration, c='tab:orange', label='Final vert. acc')
@@ -78,7 +66,8 @@ class FloatServiceStats:
         plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_vel_dampened, z_vel, z_acc, z_vel_bias])
 
-        # plt.figure()
+    @staticmethod
+    def plot_angle_processing(float_service: FloatService):
         fig_, axes = plt.subplots(1, 2)
         x_rot_acc, = axes[0].plot(float_service.dev_acc_state[:, 0], c='tab:purple', label='Acc only x-rotation')
         x_rot_gyro, = axes[0].plot(float_service.dev_gyro_state[:, 0] - np.mean(float_service.dev_gyro_state[:, 0]),
@@ -98,12 +87,14 @@ class FloatServiceStats:
             axes[0].set_ylim(-ylim, ylim)
             axes[1].set_ylim(-ylim, ylim)
 
+    @staticmethod
+    def plot_vertical_acceleration_processing(float_service: FloatService):
         plt.figure()
         plt.title('Vertical acceleration')
         # z-axis acc
         # actual z-acc
         # bank angle
-        local_z_acc, = plt.plot(float_service.input[:, 2]*9.81,
+        local_z_acc, = plt.plot(float_service.input[:, 2] * 9.81,
                                 c='r',
                                 label='Local z-acc')
         processed_z_acc, = plt.plot(float_service.processed_input[:, 2],
@@ -213,3 +204,25 @@ class FloatServiceStats:
         adav_acc_z, = plt.plot(float_service.adav_acc_z.adaptive_average_array, c='xkcd:blue', label='ADAV acc Z')
         adav_acc_z_alpha, = plt.plot(float_service.adav_acc_z.alpha_array, c='xkcd:light blue', label='acc Z alpha')
         plt.legend(handles=[adav_acc_x, adav_acc_x_alpha, adav_acc_y, adav_acc_y_alpha, adav_acc_z, adav_acc_z_alpha])
+
+
+if __name__ == '__main__':
+    wave_like_office_generated_data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
+    sensor_id = '5'
+    burst_size = 1000
+    process_sim = ProcessSimulator(
+        data_path=wave_like_office_generated_data_path,
+        dev_mode=True
+    )
+
+    process_sim.all_bursts_single_float_service(sensor_id=sensor_id)
+
+    FloatServiceStats.plot_biases_in_float_service(process_sim.float_services[sensor_id])
+    FloatServiceStats.plot_vertical_position(process_sim.float_services[sensor_id])
+    FloatServiceStats.plot_vertical_velocity(process_sim.float_services[sensor_id])
+    FloatServiceStats.plot_vertical_acceleration_processing(process_sim.float_services[sensor_id])
+    FloatServiceStats.plot_angle_processing(process_sim.float_services[sensor_id])
+
+    FloatServiceStats.plot_adaptive_average_and_alpha(process_sim.float_services[sensor_id])
+    FloatServiceStats.plot_float_service_input(process_sim.float_services[sensor_id])
+    plt.show()
