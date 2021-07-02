@@ -10,14 +10,14 @@ import h5py
 
 class ProcessSimulator:
     def __init__(self,
-                 data_path: str,
+                 hdf5_path: str,
                  buffer_size: int = 1_000_000_000,
                  data_rows_total: int = 1_000_000_000,
                  dev_mode: bool = False):
         """
         :param dev_mode: Whether or not to use the FloatService-class in development mode.
         """
-        self.data_path = data_path
+        self.data_path = hdf5_path
         self.data_rows_total = data_rows_total
         self.buffer_size = buffer_size
         self.dev_mode = dev_mode
