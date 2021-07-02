@@ -207,11 +207,11 @@ class FloatServiceStats:
 
 
 if __name__ == '__main__':
-    wave_like_office_generated_data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
+    data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
     sensor_id = '5'
     burst_size = 1000
     process_sim = ProcessSimulator(
-        data_path=wave_like_office_generated_data_path,
+        hdf5_path=data_path,
         dev_mode=True
     )
 
