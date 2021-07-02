@@ -328,6 +328,67 @@ class FloatService:
         self.estimate_vertical_velocity(row_no=row_no)
         self.estimate_vertical_position(row_no=row_no)
 
+    def estimate_angles_using_gyro(self, row_no: int):
+        self.output[row_no, 0:2] = \
+            self.output[row_no-1, 0:2] + \
+            self.sampling_period * self.processed_input[row_no, 3:5]\
+            * np.flip(np.cos(self.output[row_no-1, 0:2]))
+        if self.dev_mode:
+            self.dev_gyro_state[row_no] = self.dev_gyro_state[row_no - 1] + \
+                                                 self.sampling_period * self.processed_input[row_no, 3:5]\
+                                                 * np.flip(np.cos(self.dev_gyro_state[row_no-1]))
+
+    def estimate_vertical_acceleration(self, row_no: int):
+        """
+        Estimates vertical acceleration of the sensor.
+        Rotates the set of acceleration vectors produced by the angles found in angle estimation, then uses the
+        z-component of the resulting set as the vertical acceleration of the sensor.
+        """
+
+        a_vector = self.processed_input[row_no, 0:3]
+        inverse_orientation = [-self.output[row_no, 0], -self.output[row_no, 1], 0.0]
+        global_a_vector = self.rotations.rotate_system(sys_ax=a_vector, sensor_angles=inverse_orientation)
+
+        self.vertical_acceleration = - (global_a_vector[2] + self.gravitational_constant)
+
+        # Store information on vertical acceleration for wave function estimation
+        self.actual_vertical_acceleration[row_no] = self.vertical_acceleration
+
+    def estimate_vertical_velocity(self, row_no: int):
+        # Vertical velocity is updated using current vertical acceleration
+        self.dampened_vertical_velocity[row_no] = self.dampened_vertical_velocity[row_no - 1] + \
+                                                  self.sampling_period * self.vertical_acceleration
+        # Vertical velocity is adjusted by a dampening factor to compensate for integration drift
+        self.dampened_vertical_velocity[row_no] -= self.dampened_vertical_velocity[row_no] * self.vel_dampening_factor
+
+        # If a number of rows equal to or greater than the threshold for updating vertical vel bias has been traversed,
+        # update vertical velocity bias.
+        self.update_vert_vel_bias(row_no=row_no)
+
+        # Vertical velocity is adjusted by bias and stored internally
+        self.vertical_velocity = self.dampened_vertical_velocity[row_no] - self.vert_vel_bias
+        # In development mode, store information on vertical velocity for each time step
+        if self.dev_mode:
+            self.dev_vertical_velocity[row_no] = self.vertical_velocity
+            self.vert_vel_bias_array[row_no] = self.vert_vel_bias
+
+    def estimate_vertical_position(self, row_no: int):
+        # Vertical position is updated using current vertical velocity
+        self.dampened_vertical_position[row_no] = self.dampened_vertical_position[row_no - 1] + \
+                                                  self.sampling_period * self.vertical_velocity
+        # Vertical position is adjusted by a dampening factor to compensate for integration drift
+        self.dampened_vertical_position[row_no] -= self.dampened_vertical_position[row_no] * self.pos_dampening_factor
+
+        # If a number of rows equal to or greater than the threshold for updating vertical pos bias has been traversed,
+        # update vertical position bias.
+        self.update_vert_pos_bias(row_no=row_no)
+
+        # Vertical position is adjusted by the bias and stored as output
+        self.output[row_no, 2] = self.dampened_vertical_position[row_no] - self.vert_pos_bias
+
+        if self.dev_mode:
+            self.vert_pos_bias_array[row_no] = self.vert_pos_bias
+
     def update_counters_on_buffer_reuse(self):
         self.last_acc_bias_update = self.last_acc_bias_update - self.last_valid - 1
         self.last_gyro_bias_update = self.last_gyro_bias_update - self.last_valid - 1
@@ -403,73 +464,6 @@ class FloatService:
             self.n_points_for_pos_mean = new_n_data_points
             # print(f'When last row was {self.last_row}, pos bias window size set to {self.n_points_for_pos_mean}')
             self.set_position_average_weights()
-
-    def estimate_vertical_acceleration(self, row_no: int):
-        """
-        Estimates vertical acceleration of the float and, if necessary, updates acceleration bias.
-        """
-        # # In order to go from z-sensor acceleration to vertical acceleration, the bank angle is required
-        # bank_angle = self.bank_angle(row_no)
-        # # In development mode, store information about the bank angle for each time step
-        # if self.dev_mode:
-        #     self.dev_bank_angle[row_no] = bank_angle
-        #
-        # # proper_vertical_acceleration = sensor_z_acc / np.cos(bank_angle)
-        # # actual_vertical_acceleration = proper_vertical_acceleration + self.gravitational_constant
-        # # self.vertical_acceleration = -actual_vertical_acceleration
-        # # Alternative take: Assume that most if not all movement is vertical
-        #
-        # # self.update_proper_vert_acc_bias(row_no=row_no)
-        # self.proper_vertical_acceleration[row_no] = np.sqrt(np.sum(np.power(self.processed_input[row_no, 0:3], 2)))
-        # actual_vertical_acceleration = self.proper_vertical_acceleration[row_no] - self.proper_vert_acc_bias - \
-        #     self.gravitational_constant
-        # # actual_vertical_acceleration = self.proper_vertical_acceleration[row_no] - self.gravitational_constant
-        #
-        # self.vertical_acceleration = actual_vertical_acceleration
-
-        a_vector = self.processed_input[row_no, 0:3]
-        inverse_orientation = [-self.output[row_no, 0], -self.output[row_no, 1], 0.0]
-        global_a_vector = self.rotations.rotate_system(sys_ax=a_vector, sensor_angles=inverse_orientation)
-
-        self.vertical_acceleration = - (global_a_vector[2] + self.gravitational_constant)
-
-        # Store information on vertical acceleration for wave function estimation
-        self.actual_vertical_acceleration[row_no] = self.vertical_acceleration
-
-    def estimate_vertical_velocity(self, row_no: int):
-        # Vertical velocity is updated using current vertical acceleration
-        self.dampened_vertical_velocity[row_no] = self.dampened_vertical_velocity[row_no - 1] + \
-                                                  self.sampling_period * self.vertical_acceleration
-        # Vertical velocity is adjusted by a dampening factor to compensate for integration drift
-        self.dampened_vertical_velocity[row_no] -= self.dampened_vertical_velocity[row_no] * self.vel_dampening_factor
-
-        # If a number of rows equal to or greater than the threshold for updating vertical vel bias has been traversed,
-        # update vertical velocity bias.
-        self.update_vert_vel_bias(row_no=row_no)
-
-        # Vertical velocity is adjusted by bias and stored internally
-        self.vertical_velocity = self.dampened_vertical_velocity[row_no] - self.vert_vel_bias
-        # In development mode, store information on vertical velocity for each time step
-        if self.dev_mode:
-            self.dev_vertical_velocity[row_no] = self.vertical_velocity
-            self.vert_vel_bias_array[row_no] = self.vert_vel_bias
-
-    def estimate_vertical_position(self, row_no: int):
-        # Vertical position is updated using current vertical velocity
-        self.dampened_vertical_position[row_no] = self.dampened_vertical_position[row_no - 1] + \
-                                                  self.sampling_period * self.vertical_velocity
-        # Vertical position is adjusted by a dampening factor to compensate for integration drift
-        self.dampened_vertical_position[row_no] -= self.dampened_vertical_position[row_no] * self.pos_dampening_factor
-
-        # If a number of rows equal to or greater than the threshold for updating vertical pos bias has been traversed,
-        # update vertical position bias.
-        self.update_vert_pos_bias(row_no=row_no)
-
-        # Vertical position is adjusted by the bias and stored as output
-        self.output[row_no, 2] = self.dampened_vertical_position[row_no] - self.vert_pos_bias
-
-        if self.dev_mode:
-            self.vert_pos_bias_array[row_no] = self.vert_pos_bias
 
     def bank_angle(self, row_no: int):
 
@@ -1027,21 +1021,11 @@ class FloatService:
 
     def set_position_average_weights(self):
         """
-        Create some array of floats, usable as weights for a weighted average.
+        Create some array of float numbers, usable as weights for a weighted average.
         This method exists because the length of the average window for position corrections varies with time.
         """
         # self.vert_pos_average_weights = np.linspace(0.0, 1.0, self.n_points_for_pos_mean)
         self.vert_pos_average_weights = np.ones(shape=[self.n_points_for_pos_mean])
-
-    def estimate_angles_using_gyro(self, row_no):
-        self.output[row_no, 0:2] = \
-            self.output[row_no-1, 0:2] + \
-            self.sampling_period * self.processed_input[row_no, 3:5]\
-            * np.flip(np.cos(self.output[row_no-1, 0:2]))
-        if self.dev_mode:
-            self.dev_gyro_state[row_no] = self.dev_gyro_state[row_no - 1] + \
-                                                 self.sampling_period * self.processed_input[row_no, 3:5]\
-                                                 * np.flip(np.cos(self.dev_gyro_state[row_no-1]))
 
     def kalman_iteration(self, row_no: int):
         """
