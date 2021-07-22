@@ -1081,16 +1081,16 @@ class FloatService:
         :return: np.ndarray of shape=[2], containing calculates x- and y-angles.
         """
         # Data merge row number
-        g_size = np.sqrt(np.sum(np.power(self.processed_input[row_no, 0:3], 2)))
+        a_abs = np.sqrt(np.sum(np.power(self.processed_input[row_no, 0:3], 2)))
         # Special case where nan-values might cause [0.0, 0.0, 0.0] as an acc measurement
         z = np.array([0.0, 0.0])
 
-        if g_size == 0.0:
+        if a_abs == 0.0:
             if self.dev_mode:
                 self.dev_acc_state[row_no] = z
             return self.output[row_no, 0:2]
-        z[0] = -np.arcsin(self.processed_input[row_no, 1] / g_size)
-        z[1] = 0.5 * np.pi - np.arccos(self.processed_input[row_no, 0] / g_size)
+        z[0] = -np.arcsin(self.processed_input[row_no, 1] / a_abs)
+        z[1] = 0.5 * np.pi - np.arccos(self.processed_input[row_no, 0] / a_abs)
 
         if self.dev_mode:
             self.dev_acc_state[row_no:min(len(self.dev_acc_state), row_no+self.rows_per_kalman_use)] = z
