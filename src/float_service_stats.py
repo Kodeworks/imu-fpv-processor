@@ -170,26 +170,26 @@ class FloatServiceStats:
     def plot_float_service_input(float_service):
         plt.figure()
         plt.title('Accelerometer input')
-        acc_x_plot, = plt.plot(float_service.input[:, 0], c='xkcd:green', label='X acc data')
+        acc_x_plot, = plt.plot(float_service.input[:, 0], c='xkcd:green', label='X acc data (g)')
         proc_acc_x_plot, = plt.plot(float_service.processed_input[:, 0], c='xkcd:light grass green',
-                                    label='Processed X acc data')
-        acc_y_plot, = plt.plot(float_service.input[:, 1], c='xkcd:blue', label='Y acc data')
+                                    label='Processed X acc data (m/s^2)')
+        acc_y_plot, = plt.plot(float_service.input[:, 1], c='xkcd:blue', label='Y acc data (g)')
         proc_acc_y_plot, = plt.plot(float_service.processed_input[:, 1], c='xkcd:light blue',
-                                    label='Processed Y acc data')
-        acc_z_plot, = plt.plot(float_service.input[:, 2], c='xkcd:red', label='Z acc data')
+                                    label='Processed Y acc data (m/s^2)')
+        acc_z_plot, = plt.plot(float_service.input[:, 2], c='xkcd:red', label='Z acc data (g)')
         proc_acc_z_plot, = plt.plot(float_service.processed_input[:, 2], c='xkcd:coral pink',
-                                    label='Processed Z acc data')
+                                    label='Processed Z acc data (m/s^2)')
         plt.legend(handles=[acc_x_plot, proc_acc_x_plot, acc_y_plot, proc_acc_y_plot, acc_z_plot, proc_acc_z_plot])
 
         plt.figure()
         plt.title('Gyroscope input')
-        gyro_x_plot, = plt.plot(float_service.input[:, 3], c='xkcd:green', label='X gyro data')
+        gyro_x_plot, = plt.plot(float_service.input[:, 3], c='xkcd:green', label='X gyro data (deg/s)')
         proc_gyro_x_plot, = plt.plot(float_service.processed_input[:, 3], c='xkcd:light grass green',
-                                     label='Processed X gyro data')
-        gyro_y_plot, = plt.plot(float_service.input[:, 4], c='xkcd:blue', label='Y gyro data')
+                                     label='Processed X gyro data (rad/s)')
+        gyro_y_plot, = plt.plot(float_service.input[:, 4], c='xkcd:blue', label='Y gyro data (deg/s)')
         proc_gyro_y_plot, = plt.plot(float_service.processed_input[:, 4], c='xkcd:light blue',
-                                     label='Processed Y gyro data')
-        gyro_z_plot, = plt.plot(float_service.input[:, 5], c='xkcd:red', label='Z gyro data')
+                                     label='Processed Y gyro data (rad/s)')
+        gyro_z_plot, = plt.plot(float_service.input[:, 5], c='xkcd:red', label='Z gyro data (deg/s)')
         # proc_gyro_z_plot, = plt.plot(float_service.processed_input[:, 5], c='xkcd:coral pink',
         #                              label='Processed Z gyro data')
         plt.legend(handles=[gyro_x_plot, proc_gyro_x_plot, gyro_y_plot, proc_gyro_y_plot, gyro_z_plot])
