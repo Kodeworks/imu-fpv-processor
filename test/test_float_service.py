@@ -577,7 +577,7 @@ def test_get_corrected_angle():
                      0.75 * pi]
 
     for i in range(len(input_angles)):
-        assert abs(fs.FloatService.get_corrected_angle(input_angles[i]) - output_angles[i]) < 0.00001
+        assert abs(fs.KalmanFilter.get_corrected_angle(input_angles[i]) - output_angles[i]) < 0.00001
 
 
 def test_rotate_system():

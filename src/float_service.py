@@ -158,23 +158,6 @@ class FloatService:
                                         btype='lowpass',
                                         output='ba')
 
-        # Kalman filter variables
-        self.rows_per_kalman_use = 10
-        self.kal_state_pri = np.array([0.0, 0.0])
-        self.kal_state_post = np.array([0.0, 0.0])
-        self.kal_p_pri = np.array([[0.5, 0.0],
-                                   [0.0, 0.5]])
-        self.kal_p_post = np.array([[0.5, 0.0],
-                                    [0.0, 0.5]])
-        _Q = 0.001 * np.pi  # Prone to change following testing but works fine
-        _R = 0.001 * np.pi  # Prone to change following testing but works fine
-        self.kal_Q = np.array([[_Q, 0.0],
-                               [0.0, _Q]])
-        self.kal_R = np.array([[_R, 0.0],
-                               [0.0, _R]])
-        self.kal_K = np.array([[0.0, 0.0],
-                               [0.0, 0.0]])
-
         # Variables for generating and storing information on the wave function
         self.n_points_for_fft = int(self.sampling_rate)*10
         self.points_between_fft = int(self.sampling_rate)*5
@@ -213,6 +196,19 @@ class FloatService:
             self.use_output_filtering = True
 
             warnings.filterwarnings('error')
+        else:
+            self.dev_acc_state = None
+            self.dev_gyro_state = None
+
+        self.rows_per_kalman_use = 10
+        self.kalman_filter = KalmanFilter(
+            processed_input=self.processed_input,
+            output=self.output,
+            sampling_period=self.sampling_period,
+            rows_per_kalman_use=self.rows_per_kalman_use,
+            dev_acc_state=self.dev_acc_state,
+            dev_gyro_state=self.dev_gyro_state,
+            dev_mode=self.dev_mode)
 
     def process(self, number_of_rows: int):
         """
@@ -317,11 +313,11 @@ class FloatService:
         # A Kalman filter iteration is performed to estimate x- and y-angles,
         # which later makes up the bank angle
         if row_no % self.rows_per_kalman_use == 0:
-            self.kalman_iteration(row_no=row_no)
-            self.output[row_no, 0:2] = self.kal_state_post
+            self.kalman_filter.kalman_iteration(row_no=row_no)
+            self.output[row_no, 0:2] = self.kalman_filter.kal_state_post
         else:
             self.estimate_angles_using_gyro(row_no)
-            self.kal_state_post = self.output[row_no, 0:2]
+            self.kalman_filter.kal_state_post = self.output[row_no, 0:2]
 
         # Vertical acceleration, velocity and position is estimated and stored internally
         self.estimate_vertical_acceleration(row_no=row_no)
@@ -935,17 +931,6 @@ class FloatService:
                                   self.low_a,
                                   self.output[start: end, 2]))
 
-    def polynomial_smoothing(self, start: int, end: int):
-        """
-        Alternative smoothing method to low-pass filter.
-        Fit a burst of data to an n-polynomial and extrapolate data points from the polynomial curve.
-        """
-        degree = (end - start + 8) // 10
-        for dof in range(5):
-            z = np.polyfit(x=np.arange(0, end - start, 1), y=self.processed_input[start:end, dof], deg=degree)
-            polynomial = np.poly1d(z)
-            self.processed_input[start:end, dof] = polynomial(np.arange(0, end - start, 1))
-
     def nan_handling(self, start: int, end: int):
         # Method uses assumtion 1
         if np.any(np.isnan(self.input[start:end, 0])):
@@ -1026,6 +1011,37 @@ class FloatService:
         """
         # self.vert_pos_average_weights = np.linspace(0.0, 1.0, self.n_points_for_pos_mean)
         self.vert_pos_average_weights = np.ones(shape=[self.n_points_for_pos_mean])
+
+
+class KalmanFilter:
+    def __init__(self, processed_input, output, sampling_period, rows_per_kalman_use,
+                 dev_acc_state=None, dev_gyro_state=None, dev_mode: bool = False):
+        # Kalman filter variables
+        self.rows_per_kalman_use = rows_per_kalman_use
+        self.kal_state_pri = np.array([0.0, 0.0])
+        self.kal_state_post = np.array([0.0, 0.0])
+        self.kal_p_pri = np.array([[0.5, 0.0],
+                                   [0.0, 0.5]])
+        self.kal_p_post = np.array([[0.5, 0.0],
+                                    [0.0, 0.5]])
+        _Q = 0.001 * np.pi  # Prone to change following testing but works fine
+        _R = 0.001 * np.pi  # Prone to change following testing but works fine
+        self.kal_Q = np.array([[_Q, 0.0],
+                               [0.0, _Q]])
+        self.kal_R = np.array([[_R, 0.0],
+                               [0.0, _R]])
+        self.kal_K = np.array([[0.0, 0.0],
+                               [0.0, 0.0]])
+
+        # Input/output variables
+        self.processed_input = processed_input
+        self.output = output
+        self.sampling_period = sampling_period
+
+        self.dev_mode = dev_mode
+        if self.dev_mode:
+            self.dev_acc_state = dev_acc_state
+            self.dev_gyro_state = dev_gyro_state
 
     def kalman_iteration(self, row_no: int):
         """
