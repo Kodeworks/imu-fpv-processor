@@ -314,9 +314,9 @@ def test_discard_burst():
     n_passed = 0
 
     # 1. All data is NaN
-    mock_input = np.zeros(shape=[data_size, 6], dtype=float)
+    mock_input = np.zeros(shape=(data_size, 6), dtype=float)
     mock_input[:] = float('nan')
-    output = np.zeros(shape=[data_size, 3], dtype=float)
+    output = np.zeros(shape=(data_size, 3), dtype=float)
     float_service = fs.FloatService(name=name, input=mock_input, output=output)
     fs.n_rows = data_size
     for i in range(data_size//burst_size):
@@ -351,8 +351,8 @@ def test_discard_burst():
 def test_adjust_pos_and_vel_dampening_factors():
     print('----adjust_pos_and_vel_dampening_factors_test()----')
     data_size = 100
-    mock_input = np.zeros(shape=[data_size, 6], dtype=float)
-    output = np.zeros(shape=[data_size, 3], dtype=float)
+    mock_input = np.zeros(shape=(data_size, 6), dtype=float)
+    output = np.zeros(shape=(data_size, 3), dtype=float)
     name = 'Copernicus'
     float_service = fs.FloatService(name=name, input=mock_input, output=output, dev_mode=True)
 
@@ -375,8 +375,8 @@ def test_adjust_pos_and_vel_dampening_factors():
 def test_boost_dampeners():
     print('----boost_dampeners_test()----')
     data_size = 100
-    mock_input = np.zeros(shape=[data_size, 6], dtype=float)
-    output = np.zeros(shape=[data_size, 3], dtype=float)
+    mock_input = np.zeros(shape=(data_size, 6), dtype=float)
+    output = np.zeros(shape=(data_size, 3), dtype=float)
     name = 'Copernicus'
     err_msg = ''
     passed = True
@@ -407,8 +407,8 @@ def test_boost_dampeners():
 def test_set_position_average_weights():
     print('----set_position_average_weights_test()----')
     data_size = 100
-    sensor_input = np.zeros(shape=[data_size, 6])
-    sensor_output = np.zeros(shape=[data_size, 3])
+    sensor_input = np.zeros(shape=(data_size, 6))
+    sensor_output = np.zeros(shape=(data_size, 3))
     name = 'copernicus'
     float_service = fs.FloatService(name=name, input=sensor_input, output=sensor_output, dev_mode=True)
     pos_mean_window_len = float_service.n_points_for_pos_mean
@@ -438,8 +438,8 @@ def test_kalman_project_state():
     # 1 - Still, horizontal sensor
     kalman_project_state_tests += 1
     sensor_name = 'copernicus_01'
-    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+    input_buffers = np.zeros(shape=(fs.n_rows, 6), dtype=float)
+    output_buffers = np.zeros(shape=(fs.n_rows, 3), dtype=float)
 
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off gyroscope mean adjustment
@@ -462,14 +462,14 @@ def test_kalman_project_state():
     # 2 - Constant angular velocity, single axis
     kalman_project_state_tests += 1
     sensor_name = 'copernicus_02'
-    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+    input_buffers = np.zeros(shape=(fs.n_rows, 6), dtype=float)
+    output_buffers = np.zeros(shape=(fs.n_rows, 3), dtype=float)
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off gyroscope mean adjustment
     float_service.points_between_gyro_bias_update = np.inf
 
     # Mock input manipulation
-    input_burst = np.zeros(shape=[data_size, 6], dtype=float)
+    input_burst = np.zeros(shape=(data_size, 6), dtype=float)
     # Constant angular velocity of 1 deg/s around the x-axis
     # Gyro data flipped
     input_burst[:, 3] = - 1.0
@@ -509,8 +509,8 @@ def test_kalman_z():
     kalman_z_tests += 1
     sensor_name = 'copernicus_01'
     fs.n_rows = data_size
-    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+    input_buffers = np.zeros(shape=(fs.n_rows, 6), dtype=float)
+    output_buffers = np.zeros(shape=(fs.n_rows, 3), dtype=float)
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off acceleration mean adjustment
     float_service.points_between_acc_bias_update = np.inf
@@ -533,8 +533,8 @@ def test_kalman_z():
     kalman_z_tests += 1
     sensor_name = 'copernicus_02'
     fs.n_rows = data_size
-    input_buffers = np.zeros(shape=[fs.n_rows, 6], dtype=float)
-    output_buffers = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+    input_buffers = np.zeros(shape=(fs.n_rows, 6), dtype=float)
+    output_buffers = np.zeros(shape=(fs.n_rows, 3), dtype=float)
     fs.n_rows = data_size
     float_service = fs.FloatService(name=sensor_name, input=input_buffers, output=output_buffers, dev_mode=True)
     # Turn off acceleration mean adjustment
@@ -1163,7 +1163,7 @@ def test_rotate_system():
 
         # rotation_roundtrips = [1, 10, 100, 1000, 10_000, 100_000, 1000_000]
         rotation_roundtrips = [10_000]
-        systems = np.zeros(shape=[len(rotation_roundtrips), 3, 3])
+        systems = np.zeros(shape=(len(rotation_roundtrips), 3, 3))
 
         for i, r in enumerate(rotation_roundtrips):
             print(f'Calculating stats for {r} rotation roundtrips.')

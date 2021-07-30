@@ -48,9 +48,9 @@ class ProcessSimulator:
 
     def add_float_service(self, sensor_id):
         with h5py.File(self.data_path, 'r') as f:
-            self.all_input_data[sensor_id] = np.zeros(shape=[self.data_rows_total, 6], dtype=float)
-            self.inputs[sensor_id] = np.zeros(shape=[self.buffer_size, 6])
-            self.outputs[sensor_id] = np.zeros(shape=[self.buffer_size, 3], dtype=float)
+            self.all_input_data[sensor_id] = np.zeros(shape=(self.data_rows_total, 6), dtype=float)
+            self.inputs[sensor_id] = np.zeros(shape=(self.buffer_size, 6))
+            self.outputs[sensor_id] = np.zeros(shape=(self.buffer_size, 3), dtype=float)
             temp_rows = min(self.data_rows_total, len(f[sensor_id]['data'][:]))
             self.all_input_data[sensor_id][:temp_rows] = f[sensor_id]['data'][:temp_rows]
             self.float_services[sensor_id] = fs.FloatService(name=sensor_id,
@@ -240,8 +240,8 @@ class FloatServiceHandler:
         self.float_services[sensor_id].process(number_of_rows=len(burst))
 
     def add_float_service(self, sensor_id: str):
-        self.input_buffers[sensor_id] = np.zeros(shape=[fs.n_rows, 6], dtype=float)
-        self.output_buffers[sensor_id] = np.zeros(shape=[fs.n_rows, 3], dtype=float)
+        self.input_buffers[sensor_id] = np.zeros(shape=(fs.n_rows, 6), dtype=float)
+        self.output_buffers[sensor_id] = np.zeros(shape=(fs.n_rows, 3), dtype=float)
         self.last_line_counters[sensor_id] = -1
         self.sensor_ids.append(sensor_id)
         new_float_service = fs.FloatService(name=sensor_id,
@@ -481,7 +481,7 @@ class SensorDataset:
             return
 
         for key in list(self.imu_data.keys()):
-            new_imu_data_temp = np.zeros(shape=[end_length, np.shape(self.imu_data[key])[1]])
+            new_imu_data_temp = np.zeros(shape=(end_length, np.shape(self.imu_data[key])[1]))
             for i in range(np.shape(self.imu_data[key])[1]):
                 new_imu_data_temp[:, i] = self.interpolate_array_to_specific_length(
                     array=self.imu_data[key][:, i],
@@ -556,7 +556,7 @@ class SensorDataset:
             return
 
         for key in list(self.imu_data.keys()):
-            self.output_dict[key] = np.zeros(shape=[len(self.imu_data[key]), 3],
+            self.output_dict[key] = np.zeros(shape=(len(self.imu_data[key]), 3),
                                              dtype=float)
             fs_temp = fs.FloatService(name='temp',
                                       input=self.imu_data[key],
