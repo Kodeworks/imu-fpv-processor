@@ -55,11 +55,11 @@ class FloatService:
         self.discard_burst_nan_threshold = 0.5
 
         # Internal storage
-        self.processed_input = np.zeros(shape=[self.input_len, 5], dtype=float)
-        self.actual_vertical_acceleration = np.zeros(shape=[self.input_len], dtype=float)
-        self.proper_vertical_acceleration = np.zeros(shape=[self.input_len], dtype=float)
-        self.dampened_vertical_velocity = np.zeros(shape=[self.input_len], dtype=float)
-        self.dampened_vertical_position = np.zeros(shape=[self.input_len], dtype=float)
+        self.processed_input = np.zeros(shape=(self.input_len, 5), dtype=float)
+        self.actual_vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
+        self.proper_vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
+        self.dampened_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
+        self.dampened_vertical_position = np.zeros(shape=(self.input_len,), dtype=float)
         self.vertical_acceleration = 0.0
         self.vertical_velocity = 0.0
 
@@ -71,11 +71,11 @@ class FloatService:
         self.n_points_for_pos_mean = 512
 
         # Information on sensor bias is kept
-        self.acc_bias_sliding_window = np.zeros(shape=3, dtype=float)
-        self.gyro_bias_sliding_window = np.zeros(shape=2, dtype=float)
+        self.acc_bias_sliding_window = np.zeros(shape=(3,), dtype=float)
+        self.gyro_bias_sliding_window = np.zeros(shape=(2,), dtype=float)
         # The _final-variables are the results from adaptive averaging
-        self.acc_bias_final = np.zeros(shape=3, dtype=float)
-        self.gyro_bias_final = np.zeros(shape=2, dtype=float)
+        self.acc_bias_final = np.zeros(shape=(3,), dtype=float)
+        self.gyro_bias_final = np.zeros(shape=(2,), dtype=float)
 
         # Other bias that may emerge from the estimation process
         self.proper_vert_acc_bias = 0.0
@@ -163,7 +163,7 @@ class FloatService:
         self.points_between_fft = int(self.sampling_rate)*5
         self.last_fft = -1
         self.n_saved_wave_functions = 50
-        self.wave_function_buffer = np.zeros(shape=[self.n_saved_wave_functions, self.n_points_for_fft//2], dtype=float)
+        self.wave_function_buffer = np.zeros(shape=(self.n_saved_wave_functions, self.n_points_for_fft//2), dtype=float)
         # Pointer points to the last saved wave function
         self.wave_function_buffer_pointer = -1
         # Determines whether or not wave function information is used in vertical position bias control
@@ -175,18 +175,18 @@ class FloatService:
         self.dev_mode = dev_mode
         if dev_mode:
             # Extended internal memory to examine different internal variables post processing
-            self.dev_bank_angle = np.zeros(shape=[self.input_len], dtype=float)
-            self.dev_vertical_velocity = np.zeros(shape=[self.input_len], dtype=float)
-            self.dev_gyro_state = np.zeros(shape=[self.input_len, 2], dtype=float)
-            self.dev_acc_state = np.zeros(shape=[self.input_len, 2], dtype=float)
+            self.dev_bank_angle = np.zeros(shape=(self.input_len,), dtype=float)
+            self.dev_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
+            self.dev_gyro_state = np.zeros(shape=(self.input_len, 2), dtype=float)
+            self.dev_acc_state = np.zeros(shape=(self.input_len, 2), dtype=float)
 
-            self.n_bias_updates = np.zeros(shape=[5], dtype=int)  # Gyro, xy acc, vert acc, vel, pos
+            self.n_bias_updates = np.zeros(shape=(5,), dtype=int)  # Gyro, xy acc, vert acc, vel, pos
 
             # Biases for each timestep are also kept for examination
-            self.acc_bias_array = np.zeros(shape=[self.input_len, 3], dtype=float)
-            self.gyro_bias_array = np.zeros(shape=[self.input_len, 2], dtype=float)
-            self.vert_vel_bias_array = np.zeros(shape=[self.input_len], dtype=float)
-            self.vert_pos_bias_array = np.zeros(shape=[self.input_len], dtype=float)
+            self.acc_bias_array = np.zeros(shape=(self.input_len, 3), dtype=float)
+            self.gyro_bias_array = np.zeros(shape=(self.input_len, 2), dtype=float)
+            self.vert_vel_bias_array = np.zeros(shape=(self.input_len,), dtype=float)
+            self.vert_pos_bias_array = np.zeros(shape=(self.input_len,), dtype=float)
 
             # Some control variables for testing with a purpose of controling vertical position output
             self.no_vert_pos_bias = False
@@ -1010,7 +1010,7 @@ class FloatService:
         This method exists because the length of the average window for position corrections varies with time.
         """
         # self.vert_pos_average_weights = np.linspace(0.0, 1.0, self.n_points_for_pos_mean)
-        self.vert_pos_average_weights = np.ones(shape=[self.n_points_for_pos_mean])
+        self.vert_pos_average_weights = np.ones(shape=(self.n_points_for_pos_mean,))
 
 
 class KalmanFilter:
@@ -1094,7 +1094,7 @@ class KalmanFilter:
     def kalman_z(self, row_no: int):
         """
         Observation function. Observes acceleration data, calculates x- and y-angles.
-        :return: np.ndarray of shape=[2], containing calculates x- and y-angles.
+        :return: np.ndarray of shape=(2,), containing calculates x- and y-angles.
         """
         # Data merge row number
         a_abs = np.sqrt(np.sum(np.power(self.processed_input[row_no, 0:3], 2)))
