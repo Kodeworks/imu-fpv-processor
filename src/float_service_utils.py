@@ -123,11 +123,10 @@ class ProcessSimulator:
             return 2
 
     def all_bursts_single_float_service(self, sensor_id: str, offset: int = 0, burst_size: int = 1000,
-                                        print_progress: bool = False):
+                                        print_progress: bool = False, time_processing: bool = False):
         if print_progress:
             print(f'Processing {self.data_rows_total} data rows with buffer size '
                   f'{self.buffer_size} for sensor {sensor_id}')
-        start = time.time()
 
         # Progress tracking for visual confirmation
         actual_burst_number = self.data_rows_total // burst_size
@@ -137,7 +136,8 @@ class ProcessSimulator:
         progress_milestone = total_bursts//total_progress
         p = 0
 
-        for i in range(actual_burst_number - offset):
+        start_time = time.time()
+        for i in range(total_bursts):
             if progress_milestone != 0 and p % progress_milestone == 0:
                 if print_progress:
                     sys.stdout.write(self.get_progress_string(progress_index, total_progress))
@@ -145,10 +145,13 @@ class ProcessSimulator:
             self.next_burst(sensor_id=sensor_id, burst_size=burst_size)
             p += 1
 
+        total_time = time.time() - start_time
         if print_progress:
             sys.stdout.write(self.get_progress_string(progress_index, total_progress))
-        if print_progress:
-            print(f'Data from {sensor_id} processed in {(time.time() - start):.3f}s')
+        if time_processing:
+            time_per_row = total_time/(total_bursts*burst_size)
+            print(f'Data from float {sensor_id} processed in {total_time:.3f} s.'
+                  f'Time per row = {time_per_row:0.7f} s.')
 
     def next_burst(self, sensor_id: str, burst_size: int = 26, wait_on_buffer_reuse: bool = False):
         """
@@ -417,7 +420,7 @@ class SensorDataset:
 
         for key in list(self.imu_data.keys()):
             self.imu_data[key] = np.array(self.imu_data[key])
-            print(f'Read {len(self.imu_data[key])} from sensor {key}.')
+            print(f'Read {len(self.imu_data[key])} rows from sensor {key}.')
 
     def read_input_from_hdf5_file(self, file_path: str):
         with h5py.File(name=file_path, mode='r') as hdf5_file:
@@ -585,3 +588,9 @@ class SensorDataset:
         self.max_sensors_exeeded = False
 
         print('All data wiped and variables reset.')
+
+
+if __name__ == '__main__':
+    dataset = SensorDataset()
+    dataset.read_input_from_csv_file(file_path='../data/log.txt', sep='\t', order='itsppp')
+    dataset.write_input_to_hdf5_file(file_path='../data/log20211022_02.hdf5')
