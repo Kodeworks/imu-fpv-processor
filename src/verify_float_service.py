@@ -64,6 +64,6 @@ if __name__ == '__main__':
     if predict_angles:
         data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
         sensor_id = '5'
-        prediction_time = 0.2
+        prediction_time = 0.05
         verify_predict_angles(hdf5_path=data_path, sensor_id=sensor_id, t=prediction_time,
                               x_limits=(350, 380), y_limits=(-0.4, 0.4))

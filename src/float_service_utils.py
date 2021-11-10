@@ -420,6 +420,8 @@ class SensorDataset:
 
         for key in list(self.imu_data.keys()):
             self.imu_data[key] = np.array(self.imu_data[key])
+            if key in list(self.timestamps.keys()):
+                self.timestamps[key] = np.array(self.timestamps[key])
             print(f'Read {len(self.imu_data[key])} rows from sensor {key}.')
 
     def read_input_from_hdf5_file(self, file_path: str):
@@ -466,7 +468,7 @@ class SensorDataset:
             for key in list(self.output_dict.keys()):
                 sensor_specific_group = output_file.create_group(key)
                 sensor_specific_group.create_dataset(name='data', data=self.output_dict[key])
-                sensor_specific_group.create_dataset(name='timestamps', data=self.output_dict[key])
+                sensor_specific_group.create_dataset(name='timestamps', data=self.timestamps[key])
 
     def interpolate_input_imu_data_to_length_of_longest_dataset(self):
         if not self.imu_data:
@@ -493,6 +495,28 @@ class SensorDataset:
             self.imu_data[key] = new_imu_data_temp
 
         print(f'All IMU data was interpolated to a length of {end_length} rows')
+
+    def interpolate_timestamps(self):
+        if not self.timestamps:
+            print(f'interpolate_timestamps():'
+                  f'No timestamp data found. Aborting.')
+        else:
+            for key in list(self.timestamps.keys()):
+                self.timestamps[key] = self.interpolate_array_of_sorted_duplicates(array=self.timestamps[key])
+
+    @staticmethod
+    def interpolate_array_of_sorted_duplicates(array: np.ndarray):
+        last_duplicated_value = array[0]
+        n_duplicates = 1
+        for i in range(1, len(array)):
+            if array[i] == last_duplicated_value:
+                n_duplicates += 1
+            else:
+                array[i-n_duplicates:i+1] = np.linspace(last_duplicated_value, array[i], n_duplicates+1)
+                last_duplicated_value = array[i]
+                n_duplicates = 1
+
+        return array
 
     @staticmethod
     def interpolate_array_to_specific_length(array, length: int):
@@ -544,13 +568,27 @@ class SensorDataset:
         for key in list(self.timestamps.keys()):
             self.timestamps[key] = self.timestamps[key] / 10_000
 
-    def start_timestamps_at_zero_time(self):
+    def start_timestamps_at_relative_zero_time(self):
         if not self.timestamps:
             print('start_timestamps_at_zero_time():\n'
                   'No timestamp data available. Aborting')
             return
+        earliest_timestamp = self.identify_earliest_timestamp()
         for key in list(self.timestamps.keys()):
-            self.timestamps[key] -= self.timestamps[key][0]
+            self.timestamps[key] -= earliest_timestamp
+
+    def identify_earliest_timestamp(self):
+        if not self.timestamps:
+            print('identify_earliest_timestamp():\n'
+                  'No timestamp data available. Aborting')
+            return
+        else:
+            earliest_timestamp = np.inf
+            for key in list(self.timestamps.keys()):
+                if self.timestamps[key][0] < earliest_timestamp:
+                    earliest_timestamp = self.timestamps[key][0]
+
+            return earliest_timestamp
 
     def generate_float_service_output(self):
         if not self.imu_data:
@@ -592,5 +630,11 @@ class SensorDataset:
 
 if __name__ == '__main__':
     dataset = SensorDataset()
-    dataset.read_input_from_csv_file(file_path='../data/log.txt', sep='\t', order='itsppp')
-    dataset.write_input_to_hdf5_file(file_path='../data/log20211022_02.hdf5')
+    dataset.read_input_from_csv_file(
+        file_path='../data/bestumkilen-2020-04-23__10_orthoginalized.csv', sep='\t', order='tpips'
+    )
+    dataset.start_timestamps_at_relative_zero_time()
+    dataset.interpolate_timestamps()
+    dataset.write_input_to_hdf5_file(file_path='../data/bestumkilen-2020-04-23__10_orthoginalized.hdf5')
+    dataset.generate_float_service_output()
+    dataset.write_output_to_hdf5_file(output_path='../data/bestumkilen-2020-04-23_output.hdf5')
