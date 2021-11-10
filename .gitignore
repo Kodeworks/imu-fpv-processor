@@ -133,3 +133,6 @@ dmypy.json
 
 # Binary data files
 *.hdf5
+
+# Data folder
+data/*

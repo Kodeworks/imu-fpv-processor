@@ -123,11 +123,10 @@ class ProcessSimulator:
             return 2
 
     def all_bursts_single_float_service(self, sensor_id: str, offset: int = 0, burst_size: int = 1000,
-                                        print_progress: bool = False):
+                                        print_progress: bool = False, time_processing: bool = False):
         if print_progress:
             print(f'Processing {self.data_rows_total} data rows with buffer size '
                   f'{self.buffer_size} for sensor {sensor_id}')
-        start = time.time()
 
         # Progress tracking for visual confirmation
         actual_burst_number = self.data_rows_total // burst_size
@@ -137,7 +136,8 @@ class ProcessSimulator:
         progress_milestone = total_bursts//total_progress
         p = 0
 
-        for i in range(actual_burst_number - offset):
+        start_time = time.time()
+        for i in range(total_bursts):
             if progress_milestone != 0 and p % progress_milestone == 0:
                 if print_progress:
                     sys.stdout.write(self.get_progress_string(progress_index, total_progress))
@@ -145,10 +145,13 @@ class ProcessSimulator:
             self.next_burst(sensor_id=sensor_id, burst_size=burst_size)
             p += 1
 
+        total_time = time.time() - start_time
         if print_progress:
             sys.stdout.write(self.get_progress_string(progress_index, total_progress))
-        if print_progress:
-            print(f'Data from {sensor_id} processed in {(time.time() - start):.3f}s')
+        if time_processing:
+            time_per_row = total_time/(total_bursts*burst_size)
+            print(f'Data from float {sensor_id} processed in {total_time:.3f} s.'
+                  f'Time per row = {time_per_row:0.7f} s.')
 
     def next_burst(self, sensor_id: str, burst_size: int = 26, wait_on_buffer_reuse: bool = False):
         """
@@ -417,7 +420,9 @@ class SensorDataset:
 
         for key in list(self.imu_data.keys()):
             self.imu_data[key] = np.array(self.imu_data[key])
-            print(f'Read {len(self.imu_data[key])} from sensor {key}.')
+            if key in list(self.timestamps.keys()):
+                self.timestamps[key] = np.array(self.timestamps[key])
+            print(f'Read {len(self.imu_data[key])} rows from sensor {key}.')
 
     def read_input_from_hdf5_file(self, file_path: str):
         with h5py.File(name=file_path, mode='r') as hdf5_file:
@@ -463,7 +468,7 @@ class SensorDataset:
             for key in list(self.output_dict.keys()):
                 sensor_specific_group = output_file.create_group(key)
                 sensor_specific_group.create_dataset(name='data', data=self.output_dict[key])
-                sensor_specific_group.create_dataset(name='timestamps', data=self.output_dict[key])
+                sensor_specific_group.create_dataset(name='timestamps', data=self.timestamps[key])
 
     def interpolate_input_imu_data_to_length_of_longest_dataset(self):
         if not self.imu_data:
@@ -490,6 +495,28 @@ class SensorDataset:
             self.imu_data[key] = new_imu_data_temp
 
         print(f'All IMU data was interpolated to a length of {end_length} rows')
+
+    def interpolate_timestamps(self):
+        if not self.timestamps:
+            print(f'interpolate_timestamps():'
+                  f'No timestamp data found. Aborting.')
+        else:
+            for key in list(self.timestamps.keys()):
+                self.timestamps[key] = self.interpolate_array_of_sorted_duplicates(array=self.timestamps[key])
+
+    @staticmethod
+    def interpolate_array_of_sorted_duplicates(array: np.ndarray):
+        last_duplicated_value = array[0]
+        n_duplicates = 1
+        for i in range(1, len(array)):
+            if array[i] == last_duplicated_value:
+                n_duplicates += 1
+            else:
+                array[i-n_duplicates:i+1] = np.linspace(last_duplicated_value, array[i], n_duplicates+1)
+                last_duplicated_value = array[i]
+                n_duplicates = 1
+
+        return array
 
     @staticmethod
     def interpolate_array_to_specific_length(array, length: int):
@@ -541,13 +568,27 @@ class SensorDataset:
         for key in list(self.timestamps.keys()):
             self.timestamps[key] = self.timestamps[key] / 10_000
 
-    def start_timestamps_at_zero_time(self):
+    def start_timestamps_at_relative_zero_time(self):
         if not self.timestamps:
             print('start_timestamps_at_zero_time():\n'
                   'No timestamp data available. Aborting')
             return
+        earliest_timestamp = self.identify_earliest_timestamp()
         for key in list(self.timestamps.keys()):
-            self.timestamps[key] -= self.timestamps[key][0]
+            self.timestamps[key] -= earliest_timestamp
+
+    def identify_earliest_timestamp(self):
+        if not self.timestamps:
+            print('identify_earliest_timestamp():\n'
+                  'No timestamp data available. Aborting')
+            return
+        else:
+            earliest_timestamp = np.inf
+            for key in list(self.timestamps.keys()):
+                if self.timestamps[key][0] < earliest_timestamp:
+                    earliest_timestamp = self.timestamps[key][0]
+
+            return earliest_timestamp
 
     def generate_float_service_output(self):
         if not self.imu_data:
@@ -585,3 +626,15 @@ class SensorDataset:
         self.max_sensors_exeeded = False
 
         print('All data wiped and variables reset.')
+
+
+if __name__ == '__main__':
+    dataset = SensorDataset()
+    dataset.read_input_from_csv_file(
+        file_path='../data/bestumkilen-2020-04-23__10_orthoginalized.csv', sep='\t', order='tpips'
+    )
+    dataset.start_timestamps_at_relative_zero_time()
+    dataset.interpolate_timestamps()
+    dataset.write_input_to_hdf5_file(file_path='../data/bestumkilen-2020-04-23__10_orthoginalized.hdf5')
+    dataset.generate_float_service_output()
+    dataset.write_output_to_hdf5_file(output_path='../data/bestumkilen-2020-04-23_output.hdf5')

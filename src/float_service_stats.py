@@ -207,15 +207,16 @@ class FloatServiceStats:
 
 
 if __name__ == '__main__':
-    data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
-    sensor_id = '5'
+    wave_like_data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
+    office_log_path = '../data/log20211022_02.hdf5'
+    sensor_id = '1'
     burst_size = 1000
     process_sim = ProcessSimulator(
-        hdf5_path=data_path,
+        hdf5_path=office_log_path,
         dev_mode=True
     )
 
-    process_sim.all_bursts_single_float_service(sensor_id=sensor_id)
+    process_sim.all_bursts_single_float_service(sensor_id=sensor_id, time_processing=True)
 
     FloatServiceStats.plot_biases_in_float_service(process_sim.float_services[sensor_id])
     FloatServiceStats.plot_vertical_position(process_sim.float_services[sensor_id])

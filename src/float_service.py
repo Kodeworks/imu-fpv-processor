@@ -180,8 +180,6 @@ class FloatService:
             self.dev_gyro_state = np.zeros(shape=(self.input_len, 2), dtype=float)
             self.dev_acc_state = np.zeros(shape=(self.input_len, 2), dtype=float)
 
-            self.n_bias_updates = np.zeros(shape=(5,), dtype=int)  # Gyro, xy acc, vert acc, vel, pos
-
             # Biases for each timestep are also kept for examination
             self.acc_bias_array = np.zeros(shape=(self.input_len, 3), dtype=float)
             self.gyro_bias_array = np.zeros(shape=(self.input_len, 2), dtype=float)
@@ -441,6 +439,18 @@ class FloatService:
         #   - ValueError.
         self.wave_function_buffer[self.wave_function_buffer_pointer][0:len(coefficient_array)] = coefficient_array
 
+    def predict_angles(self, row_no: int, t: float):
+        """
+        Predict what the x- and y-angle of the sensor is for some time t in the future
+        :param row_no: Current row index
+        :param t: Time in seconds
+        :return: Predicted x- and y-angle [float, float]
+        """
+        x_angle_prediction = self.output[row_no, 0] + self.processed_input[row_no, 3] * t
+        y_angle_prediction = self.output[row_no, 1] + self.processed_input[row_no, 4] * t
+
+        return x_angle_prediction, y_angle_prediction
+
     def update_position_bias_control(self):
         # TODO: Test how this method affects vert pos bias window during NaN-packages, especially on time usage due to
         #       increased window size. If this is a problem, package discarding must be strengthened with using the
@@ -678,8 +688,6 @@ class FloatService:
         """
         # Update gyroscope bias if enough data has arrived since last update
         if row_no - self.last_gyro_bias_update >= self.points_between_gyro_bias_update:
-            if self.dev_mode:
-                self.n_bias_updates[0] += 1
 
             self.update_sliding_window_gyro_bias(row_no=row_no)
             self.update_adaptive_gyro_bias()
@@ -727,8 +735,6 @@ class FloatService:
         """
 
         if row_no - self.last_acc_bias_update >= self.points_between_acc_bias_update:
-            if self.dev_mode:
-                self.n_bias_updates[1] += 1
 
             self.update_sliding_window_acc_bias(row_no=row_no)
             self.update_adaptive_acc_bias()
@@ -815,7 +821,6 @@ class FloatService:
                 self.vert_vel_bias /= self.n_points_for_vel_mean
 
             if self.dev_mode:
-                self.n_bias_updates[3] += 1
                 if self.no_vert_vel_bias:
                     self.vert_vel_bias = 0.0
 
@@ -844,7 +849,6 @@ class FloatService:
                 self.vert_pos_bias /= self.n_points_for_pos_mean
 
             if self.dev_mode:
-                self.n_bias_updates[4] += 1
                 if self.no_vert_pos_bias:
                     self.vert_pos_bias = 0.0
 
