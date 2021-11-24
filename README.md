@@ -84,11 +84,11 @@ acceleration of the sensor.
 
 ### Vertical velocity estimation
 Vertical velocity is numerically integrated from the vertical acceleration. It is then corrected by a mean vertical
-velocity, in case the vertical acceleration is biased in either direction. A small dampening factor is also applied to 
+velocity, in case the vertical acceleration is biased in either direction. A small damping factor is also applied to 
 the velocity estimate, in order to counteract acceleration bias over longer stretches of time.
 
 ### Vertical position (height) estimation
-Height is numerically integrated from the vertical velocity. Average correction and a tiny dampening is also applied to
+Height is numerically integrated from the vertical velocity. Average correction and a tiny damping is also applied to
 the height estimate.
 
 ## Post processing

@@ -41,7 +41,7 @@ class FloatServiceStats:
         vert_pos_bias, = plt.plot(float_service.vert_pos_bias_array,
                                   c='xkcd:yellow',
                                   label='Vert. pos. bias')
-        plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
+        plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[gyro_bias_x, gyro_bias_y, x_acc_bias,
                             y_acc_bias, z_acc_bias, vert_vel_bias, vert_pos_bias])
 
@@ -50,9 +50,9 @@ class FloatServiceStats:
         plt.figure()
         plt.title('Vertical position')
         z_pos_dampened, = plt.plot(float_service.dampened_vertical_position, c='b', label='Dampened vert. pos')
-        z_pos, = plt.plot(float_service.output[:, 2], c='g', label='Final vert. pos')
+        z_pos, = plt.plot(float_service.orientation_mmap[:, 2], c='g', label='Final vert. pos')
         z_pos_bias, = plt.plot(float_service.vert_pos_bias_array, 'r:', label='Current vert. pos bias')
-        plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
+        plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_pos_dampened, z_pos, z_pos_bias])
 
     @staticmethod
@@ -63,7 +63,7 @@ class FloatServiceStats:
         z_vel_dampened, = plt.plot(float_service.dampened_vertical_velocity, c='b', label='Dampened vert. vel')
         z_vel, = plt.plot(float_service.dev_vertical_velocity, c='g', label='Final vert. vel')
         z_vel_bias, = plt.plot(float_service.vert_vel_bias_array, 'r:', label='Bias, dampened vert. vel')
-        plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
+        plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_vel_dampened, z_vel, z_acc, z_vel_bias])
 
     @staticmethod
@@ -72,15 +72,15 @@ class FloatServiceStats:
         x_rot_acc, = axes[0].plot(float_service.dev_acc_state[:, 0], c='tab:purple', label='Acc only x-rotation')
         x_rot_gyro, = axes[0].plot(float_service.dev_gyro_state[:, 0] - np.mean(float_service.dev_gyro_state[:, 0]),
                                    c='tab:orange', label='Gyro only x-rotation')
-        x_rot_kalman, = axes[0].plot(float_service.output[:, 0], c='tab:blue', label='Kalman estimate x-rotation')
-        axes[0].plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
+        x_rot_kalman, = axes[0].plot(float_service.orientation_mmap[:, 0], c='tab:blue', label='Kalman estimate x-rotation')
+        axes[0].plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         axes[0].legend(handles=[x_rot_acc, x_rot_gyro, x_rot_kalman])
 
         y_rot_acc, = axes[1].plot(float_service.dev_acc_state[:, 1], c='tab:purple', label='Acc only y-rotation')
         y_rot_gyro, = axes[1].plot(float_service.dev_gyro_state[:, 1] - np.mean(float_service.dev_gyro_state[:, 1]),
                                    c='tab:orange', label='Gyro only y-rotation')
-        y_rot_kalman, = axes[1].plot(float_service.output[:, 1], c='tab:blue', label='Kalman estimate y-rotation')
-        axes[1].plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
+        y_rot_kalman, = axes[1].plot(float_service.orientation_mmap[:, 1], c='tab:blue', label='Kalman estimate y-rotation')
+        axes[1].plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         axes[1].legend(handles=[y_rot_acc, y_rot_gyro, y_rot_kalman])
         ylim = max(np.abs(float_service.dev_acc_state.flatten()))
         if ylim > 0.0:
@@ -94,7 +94,7 @@ class FloatServiceStats:
         # z-axis acc
         # actual z-acc
         # bank angle
-        local_z_acc, = plt.plot(float_service.input[:, 2] * 9.81,
+        local_z_acc, = plt.plot(float_service.imu_mmap[:, 2] * 9.81,
                                 c='r',
                                 label='Local z-acc')
         processed_z_acc, = plt.plot(float_service.processed_input[:, 2],
@@ -109,7 +109,7 @@ class FloatServiceStats:
         bank_angle, = plt.plot(float_service.dev_bank_angle,
                                c='b',
                                label='Bank angle')
-        plt.plot([0, len(float_service.output)], [0.0, 0.0], 'k:')
+        plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[local_z_acc, processed_z_acc, proper_vert_acc, actual_z_acc, bank_angle])
 
     @staticmethod
@@ -131,7 +131,7 @@ class FloatServiceStats:
         freq = fls.sampling_rate
 
         # Raw z-accelaration
-        input_arr = fls.input[offset:cutoff, 2] * 9.81
+        input_arr = fls.imu_mmap[offset:cutoff, 2] * 9.81
         na_vert_acc_fft_x, na_vert_acc_fft_y = FloatServiceStats.fft_spectrum(arr=input_arr, freq=freq)
         nvap, = plt.plot(na_vert_acc_fft_x, na_vert_acc_fft_y, c='xkcd:blue', label='Raw Z-axis acceleration')
 
@@ -159,7 +159,7 @@ class FloatServiceStats:
                          label='Dampened vertical position')
 
         # Final vertical position
-        input_arr = fls.output[:, 2][offset:cutoff]
+        input_arr = fls.orientation_mmap[:, 2][offset:cutoff]
         vert_pos_final_fft_x, vert_pos_final_fft_y = FloatServiceStats.fft_spectrum(arr=input_arr, freq=freq)
         vpfp, = plt.plot(vert_pos_final_fft_x, vert_pos_final_fft_y, c='xkcd:lime green',
                          label='Final vertical position')
@@ -170,26 +170,26 @@ class FloatServiceStats:
     def plot_float_service_input(float_service):
         plt.figure()
         plt.title('Accelerometer input')
-        acc_x_plot, = plt.plot(float_service.input[:, 0], c='xkcd:green', label='X acc data (g)')
+        acc_x_plot, = plt.plot(float_service.imu_mmap[:, 0], c='xkcd:green', label='X acc data (g)')
         proc_acc_x_plot, = plt.plot(float_service.processed_input[:, 0], c='xkcd:light grass green',
                                     label='Processed X acc data (m/s^2)')
-        acc_y_plot, = plt.plot(float_service.input[:, 1], c='xkcd:blue', label='Y acc data (g)')
+        acc_y_plot, = plt.plot(float_service.imu_mmap[:, 1], c='xkcd:blue', label='Y acc data (g)')
         proc_acc_y_plot, = plt.plot(float_service.processed_input[:, 1], c='xkcd:light blue',
                                     label='Processed Y acc data (m/s^2)')
-        acc_z_plot, = plt.plot(float_service.input[:, 2], c='xkcd:red', label='Z acc data (g)')
+        acc_z_plot, = plt.plot(float_service.imu_mmap[:, 2], c='xkcd:red', label='Z acc data (g)')
         proc_acc_z_plot, = plt.plot(float_service.processed_input[:, 2], c='xkcd:coral pink',
                                     label='Processed Z acc data (m/s^2)')
         plt.legend(handles=[acc_x_plot, proc_acc_x_plot, acc_y_plot, proc_acc_y_plot, acc_z_plot, proc_acc_z_plot])
 
         plt.figure()
         plt.title('Gyroscope input')
-        gyro_x_plot, = plt.plot(float_service.input[:, 3], c='xkcd:green', label='X gyro data (deg/s)')
+        gyro_x_plot, = plt.plot(float_service.imu_mmap[:, 3], c='xkcd:green', label='X gyro data (deg/s)')
         proc_gyro_x_plot, = plt.plot(float_service.processed_input[:, 3], c='xkcd:light grass green',
                                      label='Processed X gyro data (rad/s)')
-        gyro_y_plot, = plt.plot(float_service.input[:, 4], c='xkcd:blue', label='Y gyro data (deg/s)')
+        gyro_y_plot, = plt.plot(float_service.imu_mmap[:, 4], c='xkcd:blue', label='Y gyro data (deg/s)')
         proc_gyro_y_plot, = plt.plot(float_service.processed_input[:, 4], c='xkcd:light blue',
                                      label='Processed Y gyro data (rad/s)')
-        gyro_z_plot, = plt.plot(float_service.input[:, 5], c='xkcd:red', label='Z gyro data (deg/s)')
+        gyro_z_plot, = plt.plot(float_service.imu_mmap[:, 5], c='xkcd:red', label='Z gyro data (deg/s)')
         # proc_gyro_z_plot, = plt.plot(float_service.processed_input[:, 5], c='xkcd:coral pink',
         #                              label='Processed Z gyro data')
         plt.legend(handles=[gyro_x_plot, proc_gyro_x_plot, gyro_y_plot, proc_gyro_y_plot, gyro_z_plot])
