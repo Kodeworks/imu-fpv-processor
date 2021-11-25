@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class MemMapUtils:
     @staticmethod
     def historic_data_is_contiguous(request_size: int, end_row_of_data: int):
@@ -35,3 +38,32 @@ class MemMapUtils:
 
         # indices are returned in the order that data was written to the buffer
         return buffer_end, buffer_beginning
+
+    @staticmethod
+    def get_contiguous_array_from_buffer(buffer: np.array, start_row: int, end_row: int, requested_size: int,
+                                         end_index: int):
+        if MemMapUtils.historic_data_is_contiguous(requested_size, end_row):
+            buffer_end_range, buffer_start_range = MemMapUtils.patched_buffer_indices(requested_size, start_row,
+                                                                                      end_index)
+            return np.concatenate(
+                buffer[buffer_end_range[0]:buffer_end_range[1], buffer[buffer_start_range[0]:buffer_start_range[1]]])
+
+    @staticmethod
+    # TODO: investigate if these are the same lol
+    def get_interval_with_min_size(arr: np.array, start: int, end: int, min_size: int, end_index: int):
+        """
+               Hides the complexity of accessing our cyclic buffer and returns an array of the requested size at the requested location.
+               :param arr: the array to access
+               :param start: Index of first row to get slice from
+               :param end: Index of last row to get slice from
+               :param min_size: minimum size of array returned, goes backwards from end
+               :param end_index: the array hasn't necessarily used the space all the way until the end
+               """
+        if end < min_size:
+            # this means that start is between 0 and end
+            end_arr = arr[end_index-(min_size-end):end_index]
+            start_arr = arr[:end]
+            return np.concatenate([end_arr, start_arr])
+        else:
+            adjusted_start = min(start, end-min_size)
+            return arr[adjusted_start:end]

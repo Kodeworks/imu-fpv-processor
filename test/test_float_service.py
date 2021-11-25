@@ -415,12 +415,12 @@ def test_set_position_average_weights():
     float_service = fs.FloatService(name=name, input=sensor_input, output=sensor_output, dev_mode=True)
     pos_mean_window_len = float_service.n_points_for_pos_mean
 
-    assert pos_mean_window_len == len(float_service.vert_pos_average_weights)
+    assert pos_mean_window_len == len(float_service.get_position_averaging_weights())
 
     new_pos_mean_window_len = 350
     float_service.n_points_for_pos_mean = new_pos_mean_window_len
-    float_service.set_position_average_weights()
-    assert new_pos_mean_window_len == len(float_service.vert_pos_average_weights)
+    weights = float_service.get_position_averaging_weights()
+    assert new_pos_mean_window_len == len(weights)
 
     print('----set_position_average_weights_test() ended----\n')
 

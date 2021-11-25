@@ -25,25 +25,5 @@ class LowPassFilter:
 
         return arr[-n_return_vals:]
 
-    # TODO: move to another class
-    @staticmethod
-    def get_interval_with_min_size(arr: np.array, start: int, end: int, min_size: int, end_index: int):
-        """
-               Hides the complexity of accessing our cyclic buffer and returns an array of the requested size at the requested location.
-               :param arr: the array to access
-               :param start: Index of first row to get slice from
-               :param end: Index of last row to get slice from
-               :param min_size: minimum size of array returned, goes backwards from end
-               :param end_index: the array hasn't necessarily used the space all the way until the end
-               """
-        if end < min_size:
-            # this means that start is between 0 and end
-            end_arr = arr[end_index-(min_size-end):end_index]
-            start_arr = arr[:end]
-            return np.concatenate([end_arr, start_arr])
-        else:
-            adjusted_start = min(start, end-min_size)
-            return arr[adjusted_start:end]
-
 
 

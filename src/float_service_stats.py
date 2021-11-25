@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft
 
+import config as cfg
+
 from src.float_service import FloatService
 from src.float_service_utils import ProcessSimulator
 
@@ -35,10 +37,10 @@ class FloatServiceStats:
         z_acc_bias, = plt.plot(float_service.acc_bias_array[:, 2],
                                c='xkcd:scarlet',
                                label='Z-acceleration bias')
-        vert_vel_bias, = plt.plot(float_service.vert_vel_bias_array,
+        vert_vel_bias, = plt.plot(float_service.vertical_vel_bias_array,
                                   c='xkcd:bright orange',
                                   label='Vert. vel. bias')
-        vert_pos_bias, = plt.plot(float_service.vert_pos_bias_array,
+        vert_pos_bias, = plt.plot(float_service.vertical_pos_bias_array,
                                   c='xkcd:yellow',
                                   label='Vert. pos. bias')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
@@ -51,7 +53,7 @@ class FloatServiceStats:
         plt.title('Vertical position')
         z_pos_dampened, = plt.plot(float_service.dampened_vertical_position, c='b', label='Dampened vert. pos')
         z_pos, = plt.plot(float_service.orientation_mmap[:, 2], c='g', label='Final vert. pos')
-        z_pos_bias, = plt.plot(float_service.vert_pos_bias_array, 'r:', label='Current vert. pos bias')
+        z_pos_bias, = plt.plot(float_service.vertical_pos_bias_array, 'r:', label='Current vert. pos bias')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_pos_dampened, z_pos, z_pos_bias])
 
@@ -62,7 +64,7 @@ class FloatServiceStats:
         z_acc, = plt.plot(float_service.actual_vertical_acceleration, c='tab:orange', label='Final vert. acc')
         z_vel_dampened, = plt.plot(float_service.dampened_vertical_velocity, c='b', label='Dampened vert. vel')
         z_vel, = plt.plot(float_service.dev_vertical_velocity, c='g', label='Final vert. vel')
-        z_vel_bias, = plt.plot(float_service.vert_vel_bias_array, 'r:', label='Bias, dampened vert. vel')
+        z_vel_bias, = plt.plot(float_service.vertical_vel_bias_array, 'r:', label='Bias, dampened vert. vel')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_vel_dampened, z_vel, z_acc, z_vel_bias])
 
@@ -72,14 +74,16 @@ class FloatServiceStats:
         x_rot_acc, = axes[0].plot(float_service.dev_acc_state[:, 0], c='tab:purple', label='Acc only x-rotation')
         x_rot_gyro, = axes[0].plot(float_service.dev_gyro_state[:, 0] - np.mean(float_service.dev_gyro_state[:, 0]),
                                    c='tab:orange', label='Gyro only x-rotation')
-        x_rot_kalman, = axes[0].plot(float_service.orientation_mmap[:, 0], c='tab:blue', label='Kalman estimate x-rotation')
+        x_rot_kalman, = axes[0].plot(float_service.orientation_mmap[:, 0], c='tab:blue',
+                                     label='Kalman estimate x-rotation')
         axes[0].plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         axes[0].legend(handles=[x_rot_acc, x_rot_gyro, x_rot_kalman])
 
         y_rot_acc, = axes[1].plot(float_service.dev_acc_state[:, 1], c='tab:purple', label='Acc only y-rotation')
         y_rot_gyro, = axes[1].plot(float_service.dev_gyro_state[:, 1] - np.mean(float_service.dev_gyro_state[:, 1]),
                                    c='tab:orange', label='Gyro only y-rotation')
-        y_rot_kalman, = axes[1].plot(float_service.orientation_mmap[:, 1], c='tab:blue', label='Kalman estimate y-rotation')
+        y_rot_kalman, = axes[1].plot(float_service.orientation_mmap[:, 1], c='tab:blue',
+                                     label='Kalman estimate y-rotation')
         axes[1].plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         axes[1].legend(handles=[y_rot_acc, y_rot_gyro, y_rot_kalman])
         ylim = max(np.abs(float_service.dev_acc_state.flatten()))
@@ -115,8 +119,8 @@ class FloatServiceStats:
     @staticmethod
     def fft_spectrum(arr, freq):
         y_f = fft(arr)
-        x_f_final = np.linspace(0.0, freq/2, len(arr)//2)
-        y_f_final = 2.0/len(arr) * np.abs(y_f[0:len(arr)//2])
+        x_f_final = np.linspace(0.0, freq / 2, len(arr) // 2)
+        y_f_final = 2.0 / len(arr) * np.abs(y_f[0:len(arr) // 2])
         return x_f_final, y_f_final
 
     @staticmethod
@@ -197,18 +201,27 @@ class FloatServiceStats:
     @staticmethod
     def plot_adaptive_average_and_alpha(float_service: FloatService):
         plt.figure()
-        adav_acc_x, = plt.plot(float_service.adav_acc_x.adaptive_average_array, c='xkcd:dark red', label='ADAV acc X')
-        adav_acc_x_alpha, = plt.plot(float_service.adav_acc_x.alpha_array, c='xkcd:light red', label='acc X alpha')
-        adav_acc_y, = plt.plot(float_service.adav_acc_y.adaptive_average_array, c='xkcd:green', label='ADAV acc Y')
-        adav_acc_y_alpha, = plt.plot(float_service.adav_acc_y.alpha_array, c='xkcd:light green', label='acc Y alpha')
-        adav_acc_z, = plt.plot(float_service.adav_acc_z.adaptive_average_array, c='xkcd:blue', label='ADAV acc Z')
-        adav_acc_z_alpha, = plt.plot(float_service.adav_acc_z.alpha_array, c='xkcd:light blue', label='acc Z alpha')
+        adav_acc_x, = plt.plot(float_service.biases[cfg.acc_x_identifier].adaptive_bias.adaptive_average_array,
+                               c='xkcd:dark red', label='ADAV acc X')
+        adav_acc_x_alpha, = plt.plot(float_service.biases[cfg.acc_x_identifier].adaptive_bias.alpha_array,
+                                     c='xkcd:light red', label='acc X alpha')
+
+        adav_acc_y, = plt.plot(float_service.biases[cfg.acc_y_identifier].adaptive_bias.adaptive_average_array,
+                               c='xkcd:green', label='ADAV acc Y')
+        adav_acc_y_alpha, = plt.plot(float_service.biases[cfg.acc_y_identifier].adaptive_bias.alpha_array,
+                                     c='xkcd:light green', label='acc Y alpha')
+
+        adav_acc_z, = plt.plot(float_service.biases[cfg.acc_z_identifier].adaptive_bias.adaptive_average_array,
+                               c='xkcd:blue', label='ADAV acc Z')
+        adav_acc_z_alpha, = plt.plot(float_service.biases[cfg.acc_z_identifier].adaptive_bias.alpha_array,
+                                     c='xkcd:light blue', label='acc Z alpha')
+
         plt.legend(handles=[adav_acc_x, adav_acc_x_alpha, adav_acc_y, adav_acc_y_alpha, adav_acc_z, adav_acc_z_alpha])
 
 
 if __name__ == '__main__':
     data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
-    sensor_id = '5'
+    sensor_id = '2'
     burst_size = 1000
     process_sim = ProcessSimulator(
         hdf5_path=data_path,
