@@ -66,8 +66,9 @@ class FloatService:
         self.vertical_acceleration = 0.0
         self.vertical_velocity = 0.0
 
-        self.biases = np.empty(shape=(9,), dtype=BiasEstimator)
-        self.initialize_biases()
+        self.bias_estimators = np.empty(shape=(9,), dtype=BiasEstimator)
+        self.initialize_bias_estimators()
+        self.biases = np.empty(shape=(9,), dtype=float)
 
         # Weights for weighted averages
         self.n_points_for_pos_mean = cfg.n_points_for_pos_mean_initial
@@ -126,43 +127,43 @@ class FloatService:
             dev_gyro_state=self.dev_gyro_state,
             dev_mode=self.dev_mode)
 
-    def initialize_biases(self):
-        # Gyro biases
-        self.biases[cfg.gyro_x_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
-                                                           track_bias=self.dev_mode,
-                                                           bias_tracking_length=self.input_len)
-        self.biases[cfg.gyro_y_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
-                                                           track_bias=self.dev_mode,
-                                                           bias_tracking_length=self.input_len)
-        self.biases[cfg.gyro_z_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
-                                                           track_bias=self.dev_mode,
-                                                           bias_tracking_length=self.input_len)
-
+    def initialize_bias_estimators(self):
         # Acceleration biases
-        self.biases[cfg.acc_x_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
-                                                          track_bias=self.dev_mode,
-                                                          bias_tracking_length=self.input_len)
-        self.biases[cfg.acc_y_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
-                                                          track_bias=self.dev_mode,
-                                                          bias_tracking_length=self.input_len)
-        self.biases[cfg.acc_z_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
-                                                          track_bias=self.dev_mode,
-                                                          bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.acc_x_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
+                                                                   track_bias=self.dev_mode,
+                                                                   bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.acc_y_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
+                                                                   track_bias=self.dev_mode,
+                                                                   bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.acc_z_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
+                                                                   track_bias=self.dev_mode,
+                                                                   bias_tracking_length=self.input_len)
+
+        # Gyro biases
+        self.bias_estimators[cfg.gyro_x_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
+                                                                    track_bias=self.dev_mode,
+                                                                    bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.gyro_y_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
+                                                                    track_bias=self.dev_mode,
+                                                                    bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.gyro_z_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
+                                                                    track_bias=self.dev_mode,
+                                                                    bias_tracking_length=self.input_len)
 
         # Calculated vertical biases
-        self.biases[cfg.vertical_acc_identifier] = BiasEstimator(cfg.points_between_vertical_acc_bias_update,
-                                                                 expected_value=cfg.gravitational_constant,
-                                                                 use_moving_average=False,
-                                                                 track_bias=self.dev_mode,
-                                                                 bias_tracking_length=self.input_len)
-        self.biases[cfg.vertical_velocity_identifier] = BiasEstimator(cfg.points_between_vertical_vel_bias_update,
-                                                                      use_moving_average=False,
-                                                                      track_bias=self.dev_mode,
-                                                                      bias_tracking_length=self.input_len)
-        self.biases[cfg.vertical_position_identifier] = BiasEstimator(cfg.points_between_vertical_pos_bias_update,
-                                                                      use_moving_average=False,
-                                                                      track_bias=self.dev_mode,
-                                                                      bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.vertical_acc_identifier] = BiasEstimator(cfg.points_between_vertical_acc_bias_update,
+                                                                          expected_value=cfg.gravitational_constant,
+                                                                          use_moving_average=False,
+                                                                          track_bias=self.dev_mode,
+                                                                          bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.vertical_velocity_identifier] = BiasEstimator(cfg.points_between_vertical_vel_bias_update,
+                                                                               use_moving_average=False,
+                                                                               track_bias=self.dev_mode,
+                                                                               bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.vertical_position_identifier] = BiasEstimator(cfg.points_between_vertical_pos_bias_update,
+                                                                               use_moving_average=False,
+                                                                               track_bias=self.dev_mode,
+                                                                               bias_tracking_length=self.input_len)
 
     def process(self, number_of_rows: int):
         """
@@ -181,8 +182,8 @@ class FloatService:
 
             # Previously update_counters_on_buffer_reuse()
             self.last_fft = self.last_fft - self.last_valid - 1
-            for bias in self.biases:
-                bias.update_counter(self.last_valid)
+            for bias_estimator in self.bias_estimators:
+                bias_estimator.update_counter(self.last_valid)
 
             self.copy_data_to_last_index_on_buffer_reuse()
 
@@ -240,11 +241,17 @@ class FloatService:
         imu_data = MemMapUtils.get_interval_with_min_size(self.imu_mmap, start - cfg.n_points_for_acc_mean, start,
                                                           cfg.n_points_for_acc_mean, self.last_valid)
 
-        for idx, bias in enumerate(self.biases[cfg.acc_identifier[0]:cfg.acc_identifier[-1]]):
-            bias.update(imu_data[:, cfg.acc_identifier[idx]], start)
+        for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifier[0]:cfg.acc_identifier[-1] + 1]):
+            bias_estimator.update(imu_data[:, cfg.acc_identifier[idx]], start)
 
-        for idx, bias in enumerate(self.biases[cfg.gyro_identifier[0]:cfg.gyro_identifier[-1]]):
-            bias.update(imu_data[:, cfg.gyro_identifier[idx]], start)
+        for idx, bias_estimator in enumerate(self.bias_estimators[cfg.gyro_identifier[0]:cfg.gyro_identifier[-1] + 1]):
+            bias_estimator.update(imu_data[:, cfg.gyro_identifier[idx]], start)
+
+        self.biases = np.array(list(bias.value() for bias in self.bias_estimators))
+
+        if self.dev_mode:
+            self.acc_bias_array[start - cfg.n_points_for_acc_mean:start] = self.biases[0:3]
+            self.gyro_bias_array[start - cfg.n_points_for_acc_mean:start] = self.biases[3:5]
 
         # If nan_handling() detected any NaN-values in the burst without discarding the burst, separate methods for
         # inserting processed input are used
@@ -334,9 +341,10 @@ class FloatService:
                                                               row_no - cfg.n_points_for_vel_mean, row_no,
                                                               cfg.n_points_for_vel_mean, self.last_valid)
 
-        self.biases[cfg.vertical_velocity_identifier].update(vertical_vel, row_no)
+        self.bias_estimators[cfg.vertical_velocity_identifier].update(vertical_vel, row_no)
+        self.biases[cfg.vertical_velocity_identifier] = self.bias_estimators[cfg.vertical_velocity_identifier].value()
 
-        vert_velocity_bias = self.biases[cfg.vertical_velocity_identifier].value()
+        vert_velocity_bias = self.bias_estimators[cfg.vertical_velocity_identifier].value()
         # Vertical velocity is adjusted by bias and stored internally
         self.vertical_velocity = self.dampened_vertical_velocity[row_no] - vert_velocity_bias
         # In development mode, store information on vertical velocity for each time step
@@ -357,9 +365,10 @@ class FloatService:
                                                                     row_no - cfg.n_points_for_vel_mean, row_no,
                                                                     cfg.n_points_for_vel_mean, self.last_valid)
 
-        self.biases[cfg.vertical_position_identifier].update(vertical_positions, row_no)
+        self.bias_estimators[cfg.vertical_position_identifier].update(vertical_positions, row_no)
+        self.biases[cfg.vertical_position_identifier] = self.bias_estimators[cfg.vertical_position_identifier].value()
 
-        vertical_position_bias = self.biases[cfg.vertical_position_identifier].value()
+        vertical_position_bias = self.bias_estimators[cfg.vertical_position_identifier].value()
         # Vertical position is adjusted by the bias and stored as output
         self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no] - vertical_position_bias
 
@@ -435,8 +444,7 @@ class FloatService:
             # print(f'When last row was {self.last_row}, pos bias window size set to {self.n_points_for_pos_mean}')
 
     def set_processed_acc_input(self, start: int, end: int):
-        biases = np.array(list(bias.value() for bias in self.biases[0:2]))
-        self.processed_input[start:end, 0:2] = (self.imu_mmap[start:end, 0:2] - biases) * cfg.gravitational_constant
+        self.processed_input[start:end, 0:2] = (self.imu_mmap[start:end, 0:2] - self.biases[0:2]) * cfg.gravitational_constant
 
         self.processed_input[start:end, 2] = self.imu_mmap[start:end, 2] * cfg.gravitational_constant
 
@@ -446,8 +454,7 @@ class FloatService:
         :param start: Index that slices the buffer part that is to be adjusted.
         :param end: Index that slices the buffer part that is to be adjusted.
         """
-        biases = np.array(list(bias.value() for bias in self.biases[3:5]))
-        self.processed_input[start: end, 3:5] = self.imu_mmap[start: end, 3:5] - biases
+        self.processed_input[start: end, 3:5] = self.imu_mmap[start: end, 3:5] - self.biases[3:5]
 
     def set_processed_acc_input_nan(self, start: int, end: int):
         # TODO: Consider a variable that updates for each data row in this method. The value increases by some metric
@@ -524,7 +531,7 @@ class FloatService:
             self.processed_input[first_useable_i:end, 0:3] = self.imu_mmap[first_useable_i:end, 0:3]
         # Finally, after having copied/inter/extrapolated input to processed_input, the data is adjusted according
         # to input bias
-        self.processed_input[start:end, 0:2] -= self.biases[0:2]
+        self.processed_input[start:end, 0:2] -= self.bias_estimators[0:2]
         self.processed_input[start:end, 0:3] *= cfg.gravitational_constant
 
     def set_processed_gyro_input_nan(self, start: int, end: int):
@@ -603,7 +610,7 @@ class FloatService:
 
         # Finally, after having copied/inter/extrapolated input to processed_input, the data is adjusted according
         # to input bias
-        self.processed_input[start:end, 3:5] -= self.biases[3:5]
+        self.processed_input[start:end, 3:5] -= self.bias_estimators[3:5]
 
     def convert_to_right_handed_coords(self, start: int, end: int):
         """
@@ -650,8 +657,8 @@ class FloatService:
         # Set processed input
         self.processed_input[start:end, 0:5] = np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
         self.actual_vertical_acceleration[start:end] = 0.0
-        self.dampened_vertical_velocity[start:end] = self.biases[cfg.vertical_velocity_identifier]
-        self.dampened_vertical_position[start:end] = self.biases[cfg.vertical_position_identifier]
+        self.dampened_vertical_velocity[start:end] = self.bias_estimators[cfg.vertical_velocity_identifier]
+        self.dampened_vertical_position[start:end] = self.bias_estimators[cfg.vertical_position_identifier]
         # self.vertical_acceleration and self.vertical_velocity are left unhandled since
         # they are calculated before use anyways
 
@@ -661,10 +668,10 @@ class FloatService:
             self.dev_vertical_velocity[start:end] = 0.0
             self.dev_gyro_state[start:end] = 0.0
             self.dev_acc_state[start:end] = 0.0
-            self.gyro_bias_array[start:end] = np.array(bias.value() for bias in self.biases[0:2])
+            self.gyro_bias_array[start:end] = np.array(bias.value() for bias in self.bias_estimators[0:2])
             self.acc_bias_array[start:end] = np.array([0.0, 0.0, 0.0])
-            self.vertical_vel_bias_array[start:end] = self.biases[cfg.vertical_velocity_identifier].value()
-            self.vertical_pos_bias_array[start:end] = self.biases[cfg.vertical_position_identifier].value()
+            self.vertical_vel_bias_array[start:end] = self.bias_estimators[cfg.vertical_velocity_identifier].value()
+            self.vertical_pos_bias_array[start:end] = self.bias_estimators[cfg.vertical_position_identifier].value()
 
         # Set output
         self.orientation_mmap[start:end] = np.array([0.0, 0.0, 0.0])

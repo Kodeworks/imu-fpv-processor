@@ -3,9 +3,6 @@ import src.config as cfg
 from src.utils.adaptive_moving_average import AdaptiveMovingAverage
 from src.utils.mem_map_utils import MemMapUtils
 
-
-# TODO: gravitational constant will probably be included in this bias
-
 # TODO: handle this
 # def update_counters_on_buffer_reuse(self):
 
@@ -35,15 +32,18 @@ class BiasEstimator:
     def update(self, measurements: np.array, row_no: int):
         # Only update bias if enough data has arrived
         if row_no - self.last_bias_row >= self.points_between_updates:
-            bias_sliding_window = np.nanmean(measurements) - self.expected_value
+            # TODO: vertical position uses a weighted average instead?
+            bias_sliding_window = np.nanmean(measurements, axis=0) - self.expected_value
+
             if self.use_moving_average:
                 self.adaptive_bias.update(bias_sliding_window)
                 self.bias = self.adaptive_bias.get_state()
             else:
                 self.bias = bias_sliding_window
 
-            self.last_bias_row += row_no
+            self.last_bias_row = row_no
             if self.track_bias:
+                # TODO: fix this
                 self.bias_array[self.number_of_biases] = 0
                 self.number_of_biases += 1
 

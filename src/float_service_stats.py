@@ -201,19 +201,19 @@ class FloatServiceStats:
     @staticmethod
     def plot_adaptive_average_and_alpha(float_service: FloatService):
         plt.figure()
-        adav_acc_x, = plt.plot(float_service.biases[cfg.acc_x_identifier].adaptive_bias.adaptive_average_array,
+        adav_acc_x, = plt.plot(float_service.bias_estimators[cfg.acc_x_identifier].adaptive_bias.adaptive_average_array,
                                c='xkcd:dark red', label='ADAV acc X')
-        adav_acc_x_alpha, = plt.plot(float_service.biases[cfg.acc_x_identifier].adaptive_bias.alpha_array,
+        adav_acc_x_alpha, = plt.plot(float_service.bias_estimators[cfg.acc_x_identifier].adaptive_bias.alpha_array,
                                      c='xkcd:light red', label='acc X alpha')
 
-        adav_acc_y, = plt.plot(float_service.biases[cfg.acc_y_identifier].adaptive_bias.adaptive_average_array,
+        adav_acc_y, = plt.plot(float_service.bias_estimators[cfg.acc_y_identifier].adaptive_bias.adaptive_average_array,
                                c='xkcd:green', label='ADAV acc Y')
-        adav_acc_y_alpha, = plt.plot(float_service.biases[cfg.acc_y_identifier].adaptive_bias.alpha_array,
+        adav_acc_y_alpha, = plt.plot(float_service.bias_estimators[cfg.acc_y_identifier].adaptive_bias.alpha_array,
                                      c='xkcd:light green', label='acc Y alpha')
 
-        adav_acc_z, = plt.plot(float_service.biases[cfg.acc_z_identifier].adaptive_bias.adaptive_average_array,
+        adav_acc_z, = plt.plot(float_service.bias_estimators[cfg.acc_z_identifier].adaptive_bias.adaptive_average_array,
                                c='xkcd:blue', label='ADAV acc Z')
-        adav_acc_z_alpha, = plt.plot(float_service.biases[cfg.acc_z_identifier].adaptive_bias.alpha_array,
+        adav_acc_z_alpha, = plt.plot(float_service.bias_estimators[cfg.acc_z_identifier].adaptive_bias.alpha_array,
                                      c='xkcd:light blue', label='acc Z alpha')
 
         plt.legend(handles=[adav_acc_x, adav_acc_x_alpha, adav_acc_y, adav_acc_y_alpha, adav_acc_z, adav_acc_z_alpha])
@@ -221,7 +221,7 @@ class FloatServiceStats:
 
 if __name__ == '__main__':
     data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
-    sensor_id = '2'
+    sensor_id = '5'
     burst_size = 1000
     process_sim = ProcessSimulator(
         hdf5_path=data_path,
