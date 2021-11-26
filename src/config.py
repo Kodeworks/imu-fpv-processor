@@ -87,12 +87,12 @@ use_output_filtering = True
 acc_x_identifier = 0
 acc_y_identifier = 1
 acc_z_identifier = 2
-acc_identifier = [0, 1, 2]
+acc_identifiers = [0, 1, 2]
 
 gyro_x_identifier = 3
 gyro_y_identifier = 4
 gyro_z_identifier = 5
-gyro_identifier = [3, 4, 5]
+gyro_identifiers = [3, 4, 5]
 
 vertical_acc_identifier = 6
 vertical_velocity_identifier = 7

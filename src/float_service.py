@@ -1,30 +1,29 @@
 """
 Assumptions:
-1. If any single value in a row of 5 values is NaN, then the entire row is NaN
+1. Either all measurements in a row are NaN values, or all measurements are valid
 
 Explainations:
 Pose - Both position and orientation of an object
 DOF/dof - Degree of freedom, here used to describe data from one of the six sensor readings (acc x-y-z, gyro x-y-z)
 """
-import string
-
-import numpy as np
-from scipy.signal import butter, filtfilt
-from scipy.fft import fft
-import config as cfg
 
 import warnings
 
-# The operating buffer size of FloatService should be a global variable so that it may be set once by some other process
+import numpy as np
+from scipy.fft import fft
+from scipy.signal import butter
+
+import config as cfg
 from src.utils.bias_estimator import BiasEstimator
 from src.utils.damping import Damping
-from src.utils.utils import Utils
-from src.utils.adaptive_moving_average import AdaptiveMovingAverage
 from src.utils.kalman_filter import KalmanFilter
-from src.utils.rotations import Rotations
-from src.utils.mem_map_utils import MemMapUtils
 from src.utils.low_pass_filter import LowPassFilter
+from src.utils.mem_map_utils import MemMapUtils
+from src.utils.nan_handling import NanHandling
+from src.utils.rotations import Rotations
+from src.utils.utils import Utils
 
+# The operating buffer size of FloatService should be a global variable so that it may be set once by some other process
 global n_rows
 
 
@@ -55,7 +54,6 @@ class FloatService:
         # The following are variables to control how the burst is handled due to NaN values
         self.burst_contains_nan = False
         self.burst_is_discarded = False
-        self.nan_in_burst = 0
 
         # Internal storage
         self.processed_input = np.zeros(shape=(self.input_len, 5), dtype=float)
@@ -129,26 +127,18 @@ class FloatService:
 
     def initialize_bias_estimators(self):
         # Acceleration biases
-        self.bias_estimators[cfg.acc_x_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
-                                                                   track_bias=self.dev_mode,
-                                                                   bias_tracking_length=self.input_len)
-        self.bias_estimators[cfg.acc_y_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
-                                                                   track_bias=self.dev_mode,
-                                                                   bias_tracking_length=self.input_len)
-        self.bias_estimators[cfg.acc_z_identifier] = BiasEstimator(cfg.points_between_acc_bias_update, use_moving_average=True,
-                                                                   track_bias=self.dev_mode,
-                                                                   bias_tracking_length=self.input_len)
+        for acc_identifier in cfg.acc_identifiers:
+            self.bias_estimators[acc_identifier] = BiasEstimator(cfg.points_between_acc_bias_update,
+                                                                 use_moving_average=True,
+                                                                 track_bias=self.dev_mode,
+                                                                 bias_tracking_length=self.input_len)
 
         # Gyro biases
-        self.bias_estimators[cfg.gyro_x_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
-                                                                    track_bias=self.dev_mode,
-                                                                    bias_tracking_length=self.input_len)
-        self.bias_estimators[cfg.gyro_y_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
-                                                                    track_bias=self.dev_mode,
-                                                                    bias_tracking_length=self.input_len)
-        self.bias_estimators[cfg.gyro_z_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update, use_moving_average=True,
-                                                                    track_bias=self.dev_mode,
-                                                                    bias_tracking_length=self.input_len)
+        for gyro_identifier in cfg.gyro_identifiers:
+            self.bias_estimators[gyro_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update,
+                                                                  use_moving_average=True,
+                                                                  track_bias=self.dev_mode,
+                                                                  bias_tracking_length=self.input_len)
 
         # Calculated vertical biases
         self.bias_estimators[cfg.vertical_acc_identifier] = BiasEstimator(cfg.points_between_vertical_acc_bias_update,
@@ -156,14 +146,16 @@ class FloatService:
                                                                           use_moving_average=False,
                                                                           track_bias=self.dev_mode,
                                                                           bias_tracking_length=self.input_len)
-        self.bias_estimators[cfg.vertical_velocity_identifier] = BiasEstimator(cfg.points_between_vertical_vel_bias_update,
-                                                                               use_moving_average=False,
-                                                                               track_bias=self.dev_mode,
-                                                                               bias_tracking_length=self.input_len)
-        self.bias_estimators[cfg.vertical_position_identifier] = BiasEstimator(cfg.points_between_vertical_pos_bias_update,
-                                                                               use_moving_average=False,
-                                                                               track_bias=self.dev_mode,
-                                                                               bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.vertical_velocity_identifier] = BiasEstimator(
+            cfg.points_between_vertical_vel_bias_update,
+            use_moving_average=False,
+            track_bias=self.dev_mode,
+            bias_tracking_length=self.input_len)
+        self.bias_estimators[cfg.vertical_position_identifier] = BiasEstimator(
+            cfg.points_between_vertical_pos_bias_update,
+            use_moving_average=False,
+            track_bias=self.dev_mode,
+            bias_tracking_length=self.input_len)
 
     def process(self, number_of_rows: int):
         """
@@ -177,49 +169,36 @@ class FloatService:
             start = self.last_row + 1
         else:
             start = 0
-            # Information on last actual buffer index is kept
-            self.last_valid = self.last_row
-
-            # Previously update_counters_on_buffer_reuse()
-            self.last_fft = self.last_fft - self.last_valid - 1
-            for bias_estimator in self.bias_estimators:
-                bias_estimator.update_counter(self.last_valid)
-
-            self.copy_data_to_last_index_on_buffer_reuse()
+            self.handle_buffer_wrapping()
 
         end = start + number_of_rows
 
         if cfg.use_minibursts:
-            self.minibursts(start=start, end=end)
-            self.postprocess_output(start=start, end=end)
+            step = cfg.miniburst_size
         else:
-            self.preprocess_data(start=start, end=end)
+            step = number_of_rows
+
+        for start_i in range(start, end, step):
+            end_i = min(end, start_i + step)
+            self.preprocess_data(start_i, end_i)
 
             # Check whether burst is declared discarded
             if not self.burst_is_discarded:
-                self.run_processing_iterations(start=start, end=end)
-                self.postprocess_output(start=start, end=end)
+                self.run_processing_iterations(start_i, end_i)
+
+        if not self.burst_is_discarded:
+            self.postprocess_output(start, end)
 
         self.last_row = end - 1
 
-    def minibursts(self, start: int, end: int):
-        """
-        Minibursts are activated when a given burst is of greater size than some threshold. This is to make sure
-        some preprocessing steps like real time calibration of sensors (averaging of sensor input) is performed
-        regularily
-        :param start: Start index of miniburst
-        :param end: End index of miniburst
-        """
-        s_i = start
-        e_i = min(end, s_i + cfg.miniburst_size)
-        while s_i < end:
-            self.preprocess_data(start=s_i, end=e_i)
-            # Check whether burst is declared discarded
-            if not self.burst_is_discarded:
-                self.run_processing_iterations(start=s_i, end=e_i)
-
-            s_i += cfg.miniburst_size
-            e_i = min(end, s_i + cfg.miniburst_size)
+    def handle_buffer_wrapping(self):
+        # Information on last actual buffer index is kept
+        self.last_valid = self.last_row
+        # Previously update_counters_on_buffer_reuse()
+        self.last_fft = self.last_fft - self.last_valid - 1
+        for bias_estimator in self.bias_estimators:
+            bias_estimator.update_counter(self.last_valid)
+        self.copy_data_to_last_index_on_buffer_reuse()
 
     def preprocess_data(self, start: int, end: int):
         """
@@ -231,21 +210,26 @@ class FloatService:
         """
 
         # NaN-handling
-        self.nan_handling(start=start, end=end)
-        # Check whether burst was declared as discarded due to NaN_handling
-        if self.burst_is_discarded:
+        burst_contains_nan = NanHandling.burst_contains_nan(self.imu_mmap, start, end)
+        # Check whether burst should be discarded because of NaN values
+        if NanHandling.should_discard_burst(self.imu_mmap, start, end):
+            self.discard_burst(start, end)
+            self.burst_is_discarded = True
             return
+        else:
+            self.burst_is_discarded = False
 
         # Update gyroscope and accelerometer bias
         # TODO: possible one-off mistakes with last_valid
         imu_data = MemMapUtils.get_interval_with_min_size(self.imu_mmap, start - cfg.n_points_for_acc_mean, start,
                                                           cfg.n_points_for_acc_mean, self.last_valid)
 
-        for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifier[0]:cfg.acc_identifier[-1] + 1]):
-            bias_estimator.update(imu_data[:, cfg.acc_identifier[idx]], start)
+        for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifiers[0]:cfg.acc_identifiers[-1] + 1]):
+            bias_estimator.update(imu_data[:, cfg.acc_identifiers[idx]], start)
 
-        for idx, bias_estimator in enumerate(self.bias_estimators[cfg.gyro_identifier[0]:cfg.gyro_identifier[-1] + 1]):
-            bias_estimator.update(imu_data[:, cfg.gyro_identifier[idx]], start)
+        for idx, bias_estimator in enumerate(
+                self.bias_estimators[cfg.gyro_identifiers[0]:cfg.gyro_identifiers[-1] + 1]):
+            bias_estimator.update(imu_data[:, cfg.gyro_identifiers[idx]], start)
 
         self.biases = np.array(list(bias.value() for bias in self.bias_estimators))
 
@@ -255,14 +239,13 @@ class FloatService:
 
         # If nan_handling() detected any NaN-values in the burst without discarding the burst, separate methods for
         # inserting processed input are used
-        if self.burst_contains_nan:
-            self.set_processed_acc_input_nan(start=start, end=end)
-            self.set_processed_gyro_input_nan(start=start, end=end)
+        if burst_contains_nan:
+            interpolated_input = NanHandling.interpolate_missing_values(self.imu_mmap, start, end)
         else:
-            # Insert raw acceleration data into processed_input
-            self.set_processed_acc_input(start=start, end=end)
-            # Adjust current gyro burst according to gyro bias and insert the result in preprocessed_input
-            self.set_processed_gyro_input(start=start, end=end)
+            interpolated_input = self.imu_mmap[start:end]
+
+        self.set_processed_gyro_input(interpolated_input, start, end)
+        self.set_processed_acc_input(interpolated_input, start, end)
 
         # Convert angular velocities from deg/s to rad/s
         self.processed_input[start: end, 3:5] = Utils.degrees_to_radians(self.processed_input[start:end, 3:5])
@@ -291,11 +274,11 @@ class FloatService:
         # A Kalman filter iteration is performed to estimate x- and y-angles,
         # which later makes up the bank angle
         if row_no % cfg.rows_per_kalman_use == 0:
-            self.kalman_filter.kalman_iteration(row_no=row_no)
-            self.orientation_mmap[row_no, 0:2] = self.kalman_filter.kal_state_post
+            self.kalman_filter.iterate(row_no=row_no)
+            self.orientation_mmap[row_no, 0:2] = self.kalman_filter.get_state_estimate()
         else:
             self.estimate_angles_using_gyro(row_no)
-            self.kalman_filter.kal_state_post = self.orientation_mmap[row_no, 0:2]
+            self.kalman_filter.state_posteriori = self.orientation_mmap[row_no, 0:2]
 
         # Vertical acceleration, velocity and position is estimated and stored internally
         self.estimate_vertical_acceleration(row_no=row_no)
@@ -389,31 +372,29 @@ class FloatService:
             array_to_filter = MemMapUtils.get_interval_with_min_size(self.orientation_mmap[:, 2], start, end,
                                                                      cfg.min_filter_size, self.last_valid)
 
-            filtered_array = LowPassFilter.process(array_to_filter, self.low_a, self.low_b, end - start)
-            self.orientation_mmap[start:end, 2] = filtered_array
+            self.orientation_mmap[start:end, 2] = LowPassFilter.process(array_to_filter, self.low_a, self.low_b,
+                                                                        end - start)
 
     def wave_function(self, row_no: int):
         # Check if it is time to perform a Fourier transform
-        if row_no - self.last_fft >= cfg.n_points_between_fft:
-            # If so, check whether fft can be performed on a single stretch of the buffer
-            if MemMapUtils.historic_data_is_contiguous(cfg.n_points_for_fft, end_row_of_data=self.last_row + 1):
-                # First, we do a transform of the vertical acceleration signal
-                fourier_transform = fft(self.actual_vertical_acceleration[self.last_row + 1 - cfg.n_points_for_fft:
-                                                                          self.last_row + 1])
-            else:
-                last_indices, first_indices = MemMapUtils.patched_buffer_indices(cfg.n_points_for_fft,
-                                                                                 current_row=self.last_row + 1,
-                                                                                 prev_last_index=self.last_valid)
-                temp_buffer = np.concatenate([self.actual_vertical_acceleration[last_indices[0]:last_indices[1]],
-                                              self.actual_vertical_acceleration[first_indices[0]:first_indices[1]]])
-                fourier_transform = fft(temp_buffer)
+        if row_no - self.last_fft < cfg.n_points_between_fft:
+            return
 
-            coeff_array = 2.0 / cfg.n_points_for_fft * np.abs(fourier_transform[0:cfg.n_points_for_fft // 2])
-            self.save_wave_function(coefficient_array=coeff_array)
+        # TODO: why is self.last_row + 1 used here instead of row_no ?
+        # First, we do a transform of the vertical acceleration signal
+        vertical_acceleration = MemMapUtils.get_interval_with_min_size(self.actual_vertical_acceleration,
+                                                                       self.last_row + 1 - cfg.n_points_for_fft,
+                                                                       self.last_row + 1, cfg.n_points_for_fft,
+                                                                       self.last_valid)
 
-            self.last_fft = row_no
-            if cfg.fft_aided_bias:
-                self.update_position_bias_window_size()
+        fourier_transform = fft(vertical_acceleration)
+
+        coeff_array = 2.0 / cfg.n_points_for_fft * np.abs(fourier_transform[0:cfg.n_points_for_fft // 2])
+        self.save_wave_function(coefficient_array=coeff_array)
+
+        self.last_fft = row_no
+        if cfg.fft_aided_bias:
+            self.update_position_bias_window_size()
 
     def save_wave_function(self, coefficient_array: np.ndarray):
         # Update buffer pointer
@@ -441,176 +422,8 @@ class FloatService:
         # Update bias control, as long as the period of the greatest amplitude is greater than some threshold
         if new_n_data_points > cfg.min_points_for_pos_mean:
             self.n_points_for_pos_mean = new_n_data_points
+
             # print(f'When last row was {self.last_row}, pos bias window size set to {self.n_points_for_pos_mean}')
-
-    def set_processed_acc_input(self, start: int, end: int):
-        self.processed_input[start:end, 0:2] = (self.imu_mmap[start:end, 0:2] - self.biases[0:2]) * cfg.gravitational_constant
-
-        self.processed_input[start:end, 2] = self.imu_mmap[start:end, 2] * cfg.gravitational_constant
-
-    def set_processed_gyro_input(self, start: int, end: int):
-        """
-        Adjusts gyro data using a sensor bias.
-        :param start: Index that slices the buffer part that is to be adjusted.
-        :param end: Index that slices the buffer part that is to be adjusted.
-        """
-        self.processed_input[start: end, 3:5] = self.imu_mmap[start: end, 3:5] - self.biases[3:5]
-
-    def set_processed_acc_input_nan(self, start: int, end: int):
-        # TODO: Consider a variable that updates for each data row in this method. The value increases by some metric
-        #       for each non-NaN value, and decreases for each NaN-value. If the variable stays below a certain value
-        #       for some number of rows, these rows are discarded. NB! Should use a [0, 1] array for this, and for
-        #       setting all inputs where NaN values are present.
-        # Method uses assumtion 1
-        first_useable = float('nan')
-        first_useable_i = 0
-        last_useable = float('nan')
-        last_useable_i = 0
-        for i in range(start, end):
-            # Check if the current value is NaN
-            if np.any(np.isnan(self.imu_mmap[i, 0:3])):
-                # Check if last_useable has been assigned
-                if np.any(np.isnan(last_useable)):
-                    # If last_useable has not been assigned, the current value is the first NaN value of
-                    # some number of NaN values. Therefore, assign last_useable as the previous value
-                    last_useable = self.imu_mmap[i - 1, 0:3]
-                    last_useable_i = i - 1
-                    # Taking into account that self.input[i-1] might also be a NaN value (in case this is the beginning
-                    # of a burst and the last value of the previous burst was NaN), a generic set of values may need
-                    # to be used
-                    if np.any(np.isnan(last_useable)):
-                        last_useable = np.array([0.0, 0.0, -1.0])  # Generic set of [accX, accY, accZ]
-
-                    # If first_useable has also been assigned, all values in
-                    # self.input[first_useable: i] can be copied directly to self.processed_input
-                    if not np.any(np.isnan(first_useable)):
-                        self.processed_input[first_useable_i:i, 0:3] = self.imu_mmap[first_useable_i: i, 0:3]
-                        first_useable = float('nan')
-                    # If last_useable has already been assigned, the current value is somewhere within a row of
-                    # several NaN. Thus, nothing is done.
-            else:
-                # If the current value is not NaN, check if last_useable has been assigned
-                # If last_useable has NOT been assigned, the current value is somewhere within a row of
-                # actual values. Nothing needs to be done
-                if not np.any(np.isnan(last_useable)):
-                    # If last_useable has in fact been assigned, the current value is the first actual value
-                    # after some number of NaN values. Therefore, next_useable is assigned as current value.
-                    next_useable = self.imu_mmap[i, 0:3]
-                    # The values between last_useable and next_useable are then interpolated
-                    # Incremental values are identified
-                    steps = i - last_useable_i
-                    increment = (next_useable - last_useable) / steps
-                    increment_array = np.linspace(increment, increment * (steps - 1), steps - 1)
-                    # Currently encapsulated NaN-values are set equal to last_useable
-                    self.processed_input[last_useable_i + 1:i, 0:3] = last_useable
-                    # Increments are added
-                    # TODO: Solve this try/except
-                    try:
-                        self.processed_input[last_useable_i + 1:i, 0:3] += increment_array
-                    except ValueError:
-                        print(f'Couldn\'t insert the interpolated gyro array into processed_input:\n'
-                              f'Steps: {steps}, last_usable_i: {last_useable_i}, increment_array: {increment_array}')
-
-                    # Finally, both last_useable and next_useable are set to NaN again
-                    last_useable = float('nan')
-
-                # If first_useable is not set to any value, this is the first non-NaN value in some row of
-                # non-NaN values.
-                if np.any(np.isnan(first_useable)):
-                    first_useable = self.imu_mmap[i, 0:3]
-                    first_useable_i = i
-
-        # When the entire row is checked for NaN, there may still be the case that the last values are
-        # NaN values. In this case we cannot interpolate anything and instead we perform a simple
-        # extrapolation, by copying last_useable into each of the values.
-        if not np.any(np.isnan(last_useable)):
-            self.processed_input[last_useable_i + 1:end, 0:3] = last_useable
-        else:
-            # If last_useable is not set, this bursts ends with non-NaN values. These can be inserted into
-            # self.processed_input
-            self.processed_input[first_useable_i:end, 0:3] = self.imu_mmap[first_useable_i:end, 0:3]
-        # Finally, after having copied/inter/extrapolated input to processed_input, the data is adjusted according
-        # to input bias
-        self.processed_input[start:end, 0:2] -= self.bias_estimators[0:2]
-        self.processed_input[start:end, 0:3] *= cfg.gravitational_constant
-
-    def set_processed_gyro_input_nan(self, start: int, end: int):
-        # TODO: Consider a variable that updates for each data row in this method. The value increases by some metric
-        #       for each non-NaN value, and decreases for each NaN-value. If the variable stays below a certain value
-        #       for some number of rows, these rows are discarded.
-        # Method uses assumtion 1
-        first_useable = float('nan')
-        first_useable_i = 0
-        last_useable = float('nan')
-        last_useable_i = 0
-        for i in range(start, end):
-            # Check if the current value is NaN
-            if np.any(np.isnan(self.imu_mmap[i, 3:5])):
-                # Check if last_useable has been assigned
-                if np.any(np.isnan(last_useable)):
-                    # If last_useable has not been assigned, the current value is the first NaN value of
-                    # some number of NaN values. Therefore, assign last_useable as the previous value
-                    last_useable = self.imu_mmap[i - 1, 3:5]
-                    last_useable_i = i - 1
-
-                    # If first_useable has also been assigned, all values in
-                    # self.input[first_useable: i] can be copied directly to self.processed_input
-                    if not np.any(np.isnan(first_useable)):
-                        self.processed_input[first_useable_i:i, 3:5] = self.imu_mmap[first_useable_i: i, 3:5]
-                        first_useable = float('nan')
-
-                    # Taking into account that self.input[i-1] might also be a NaN value (in case this is the beginning
-                    # of a burst and the last value of the previous burst was NaN), a generic set of values may need
-                    # to be used
-                    if np.any(np.isnan(last_useable)):
-                        last_useable = np.array([0.0, 0.0])  # Generic set of [gyroX, gyroY]
-
-                    # If last_useable has already been assigned, the current value is somewhere within a row of
-                    # several NaN. Thus, nothing is done.
-            else:
-                # If the current value is not NaN, check if last_useable has been assigned
-                # If last_useable has NOT been assigned, the current value is somewhere within a row of
-                # actual values. Nothing needs to be done
-                if not np.any(np.isnan(last_useable)):
-                    # If last_useable has in fact been assigned, the current value is the first actual value
-                    # after some number of NaN values. Therefore, next_useable is assigned as current value.
-                    next_useable = self.imu_mmap[i, 3:5]
-                    # The values between last_useable and next_useable are then interpolated
-                    # Incremental values are identified
-                    steps = i - last_useable_i
-                    increment = (next_useable - last_useable) / steps
-                    increment_array = np.linspace(increment, increment * (steps - 1), steps - 1)
-                    # Currently encapsulated NaN-values are set equal to last_useable
-                    self.processed_input[last_useable_i + 1:i, 3:5] = last_useable
-                    # Increments are added
-                    # TODO: Solve this try/except
-                    try:
-                        self.processed_input[last_useable_i + 1:i, 3:5] += increment_array
-                    except ValueError:
-                        print(f'Couldn\'t insert the interpolated gyro array into processed_input:\n'
-                              f'Steps: {steps}, last_usable_i: {last_useable_i}, increment_array: {increment_array}')
-                    # Finally, both last_useable and next_useable are set to NaN again
-                    last_useable = float('nan')
-
-                # If first_useable is not set to any value, this is the first non-NaN value in some row of
-                # non-NaN values.
-                if np.any(np.isnan(first_useable)):
-                    first_useable = self.imu_mmap[i, 3:5]
-                    first_useable_i = i
-
-        # When the entire row is checked for NaN, there may still be the case that the last values are
-        # NaN values. In this case we cannot interpolate anything and instead we perform a simple
-        # extrapolation, by copying last_useable into each of the values.
-        if not np.any(np.isnan(last_useable)):
-            self.processed_input[last_useable_i + 1:end, 3:5] = last_useable
-        else:
-            # If last_useable is not set, this bursts ends with non-NaN values. These can be inserted into
-            # self.processed_input
-            self.processed_input[first_useable_i:end, 3:5] = self.imu_mmap[first_useable_i:end, 3:5]
-
-        # Finally, after having copied/inter/extrapolated input to processed_input, the data is adjusted according
-        # to input bias
-        self.processed_input[start:end, 3:5] -= self.bias_estimators[3:5]
 
     def convert_to_right_handed_coords(self, start: int, end: int):
         """
@@ -628,21 +441,19 @@ class FloatService:
             if cfg.axis_reversal_index < 2:
                 self.processed_input[start: end, 3 + cfg.axis_reversal_index] *= cfg.axis_reversal_coefficient
 
-    def nan_handling(self, start: int, end: int):
-        # Method uses assumtion 1
-        if np.any(np.isnan(self.imu_mmap[start:end, 0])):
-            self.burst_contains_nan = True
-            # If in fact all values of any DoF are NaN, the entire processing of this burst should be handled in a
-            # separate method
-            self.nan_in_burst = np.count_nonzero(np.isnan(self.imu_mmap[start:end, 0]))
-            if self.nan_in_burst > int((end - start) * cfg.discard_burst_nan_threshold):
-                self.discard_burst(start=start, end=end)
-                return
-            else:
-                self.burst_is_discarded = False
-        else:
-            self.burst_contains_nan = False
-            self.burst_is_discarded = False
+    def set_processed_acc_input(self, imu_array: np.array, start: int, end: int):
+        self.processed_input[start:end, 0:2] = (imu_array[:, 0:2] - self.biases[
+                                                                    0:2]) * cfg.gravitational_constant
+        self.processed_input[start:end, 2] = imu_array[:, 2] * cfg.gravitational_constant
+
+    def set_processed_gyro_input(self, imu_array: np.array, start: int, end: int):
+        """
+        Adjusts gyro data using a sensor bias.
+        :param imu_array: Array containing the processed imu measurements to use
+        :param start: Index that slices the buffer part that is to be adjusted.
+        :param end: Index that slices the buffer part that is to be adjusted.
+        """
+        self.processed_input[start:end, 3:5] = imu_array[:, 3:5] - self.biases[3:5]
 
     def discard_burst(self, start: int, end: int):
         """
@@ -676,18 +487,7 @@ class FloatService:
         # Set output
         self.orientation_mmap[start:end] = np.array([0.0, 0.0, 0.0])
 
-        # Declare burst as discarded
-        self.burst_is_discarded = True
-
         # If the burst is discarded, one of the measures taken to quickly adjust to incoming data is to increase
         # the damping factors of speed and velocity. These factors are then themselves dampened subsequently.
         self.pos_damping.boost()
         self.vel_damping.boost()
-
-    def get_position_averaging_weights(self):
-        """
-        returns some array of float numbers, usable as weights for a weighted average.
-        This method exists because the length of the average window for position corrections varies with time.
-        """
-        # return np.linspace(0.0, 1.0, self.n_points_for_pos_mean)
-        return np.ones(shape=(self.n_points_for_pos_mean,))

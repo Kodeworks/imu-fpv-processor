@@ -6,20 +6,22 @@ class KalmanFilter:
                  dev_acc_state=None, dev_gyro_state=None, dev_mode: bool = False):
         # Kalman filter variables
         self.rows_per_kalman_use = rows_per_kalman_use
-        self.kal_state_pri = np.array([0.0, 0.0])
-        self.kal_state_post = np.array([0.0, 0.0])
-        self.kal_p_pri = np.array([[0.5, 0.0],
-                                   [0.0, 0.5]])
-        self.kal_p_post = np.array([[0.5, 0.0],
-                                    [0.0, 0.5]])
+
+        self.state_priori = np.array([0.0, 0.0])
+        self.state_posteriori = np.array([0.0, 0.0])
+
+        self.p_priori = np.array([[0.5, 0.0],
+                                  [0.0, 0.5]])
+        self.p_posteriori = np.array([[0.5, 0.0],
+                                      [0.0, 0.5]])
         _Q = 0.001 * np.pi  # Prone to change following testing but works fine
         _R = 0.001 * np.pi  # Prone to change following testing but works fine
-        self.kal_Q = np.array([[_Q, 0.0],
-                               [0.0, _Q]])
-        self.kal_R = np.array([[_R, 0.0],
-                               [0.0, _R]])
-        self.kal_K = np.array([[0.0, 0.0],
-                               [0.0, 0.0]])
+        self.Q = np.array([[_Q, 0.0],
+                           [0.0, _Q]])
+        self.R = np.array([[_R, 0.0],
+                           [0.0, _R]])
+        self.K = np.array([[0.0, 0.0],
+                           [0.0, 0.0]])
 
         # Input/output variables
         self.processed_input = processed_input
@@ -31,55 +33,55 @@ class KalmanFilter:
             self.dev_acc_state = dev_acc_state
             self.dev_gyro_state = dev_gyro_state
 
-    def kalman_iteration(self, row_no: int):
+    def iterate(self, row_no: int):
         """
         An iteration of the Kalman filter.
 
         :param row_no: Current buffer row index
         """
         # A priori state projection
-        self.kalman_project_state(row_no=row_no)
+        self.project_state(row_no=row_no)
         # A priori state uncertainty projection
-        self.kalman_apriori_uncertainty()
+        self.apriori_uncertainty()
         # Kalman gain calculation
-        self.kalman_gain()
+        self.set_gain()
         # A posteriori state correction
-        self.kalman_correct_state_projection(row_no=row_no)
+        self.correct_state_projection(row_no=row_no)
         # A posteriori uncertainty correction
-        self.kalman_aposteriori_uncertainty()
+        self.set_aposteriori_uncertainty()
 
-    def kalman_project_state(self, row_no: int):
+    def project_state(self, row_no: int):
         # Data merge row number
 
         # State is projected by adding angle changes from current time step
         # The usage of the np.flip(np.cos(state)) is required to move from sensed to global angular velocity
-        self.kal_state_pri = \
-            self.kal_state_post + \
-            self.sampling_period * self.processed_input[row_no, 3:5]\
-            * np.flip(np.cos(self.kal_state_post))
+        self.state_priori = \
+            self.state_posteriori + \
+            self.sampling_period * self.processed_input[row_no, 3:5] \
+            * np.flip(np.cos(self.state_posteriori))
 
-        self.kal_state_pri[0] = self.get_corrected_angle(angle=self.kal_state_pri[0])
-        self.kal_state_pri[1] = self.get_corrected_angle(angle=self.kal_state_pri[1])
+        self.state_priori[0] = self.get_corrected_angle(angle=self.state_priori[0])
+        self.state_priori[1] = self.get_corrected_angle(angle=self.state_priori[1])
         # In development mode, store information on pure gyro-calculated angles
         if self.dev_mode:
             self.dev_gyro_state[row_no] = self.dev_gyro_state[row_no - 1] + \
                                                  self.sampling_period * self.processed_input[row_no, 3:5]\
                                                  * np.flip(np.cos(self.dev_gyro_state[row_no-1]))
 
-    def kalman_apriori_uncertainty(self):
-        self.kal_p_pri = self.kal_p_post + self.kal_Q
+    def apriori_uncertainty(self):
+        self.p_priori = self.p_posteriori + self.Q
 
-    def kalman_gain(self):
-        self.kal_K = np.matmul(self.kal_p_pri, (self.kal_p_pri + self.kal_R).transpose())
+    def set_gain(self):
+        self.K = np.matmul(self.p_priori, (self.p_priori + self.R).transpose())
 
-    def kalman_correct_state_projection(self, row_no: int):
-        z = self.kalman_z(row_no=row_no)
-        self.kal_state_post = self.kal_state_pri + np.matmul(self.kal_K, z - self.kal_state_pri)
+    def correct_state_projection(self, row_no: int):
+        measurements = self.get_measurements(row_no=row_no)
+        self.state_posteriori = self.state_priori + np.matmul(self.K, measurements - self.state_priori)
 
-    def kalman_aposteriori_uncertainty(self):
-        self.kal_p_post = np.matmul(np.identity(2, dtype=float) - self.kal_K, self.kal_p_pri)
+    def set_aposteriori_uncertainty(self):
+        self.p_posteriori = np.matmul(np.identity(2, dtype=float) - self.K, self.p_priori)
 
-    def kalman_z(self, row_no: int):
+    def get_measurements(self, row_no: int):
         """
         Observation function. Observes acceleration data, calculates x- and y-angles.
         :return: np.ndarray of shape=(2,), containing calculates x- and y-angles.
@@ -100,6 +102,9 @@ class KalmanFilter:
             self.dev_acc_state[row_no:min(len(self.dev_acc_state), row_no+self.rows_per_kalman_use)] = z
 
         return z
+
+    def get_state_estimate(self):
+        return self.state_posteriori
 
     @staticmethod
     def get_corrected_angle(angle: float):
