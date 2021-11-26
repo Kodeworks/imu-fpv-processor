@@ -51,14 +51,13 @@ class FloatService:
         # Index of highest valid index from last time the buffer counter was reset
         self.last_valid = self.input_len - 1
 
-        # The following are variables to control how the burst is handled due to NaN values
-        self.burst_contains_nan = False
+        # How the burst is handled due to NaN values
         self.burst_is_discarded = False
 
         # Internal storage
         self.processed_input = np.zeros(shape=(self.input_len, 5), dtype=float)
         self.actual_vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
-        self.proper_vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
+        # TODO: proper vertical acceleration not used
         self.dampened_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
         self.dampened_vertical_position = np.zeros(shape=(self.input_len,), dtype=float)
         self.vertical_acceleration = 0.0
@@ -72,7 +71,6 @@ class FloatService:
         self.n_points_for_pos_mean = cfg.n_points_for_pos_mean_initial
 
         # damping factors to counteract integration drift (adjusted based on current best estimate)
-
         self.vel_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_damping_factor_end,
                                    cfg.vel_damping_factor_big, cfg.damping_factor_dampener)
         self.pos_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_damping_factor_end,
@@ -90,15 +88,17 @@ class FloatService:
         # Pointer points to the last saved wave function
         self.wave_function_buffer_pointer = -1
 
-        # Development mode variables
+        self.dev_acc_state = None
+        self.dev_gyro_state = None
 
+        # Development mode variables
         if dev_mode:
             # Extended internal memory to examine different internal variables post processing
-            self.dev_bank_angle = np.zeros(shape=(self.input_len,), dtype=float)
             self.dev_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
             self.dev_gyro_state = np.zeros(shape=(self.input_len, 2), dtype=float)
             self.dev_acc_state = np.zeros(shape=(self.input_len, 2), dtype=float)
 
+            # TODO: Not currently used
             self.n_bias_updates = np.zeros(shape=(5,), dtype=int)  # Gyro, xy acc, vert acc, vel, pos
 
             # Biases for each timestep are also kept for examination
@@ -107,14 +107,7 @@ class FloatService:
             self.vertical_vel_bias_array = np.zeros(shape=(self.input_len,), dtype=float)
             self.vertical_pos_bias_array = np.zeros(shape=(self.input_len,), dtype=float)
 
-            # Some control variables for testing with a purpose of controlling vertical position output
-            self.no_vert_pos_bias = False
-            self.no_vert_vel_bias = False
-
             warnings.filterwarnings('error')
-        else:
-            self.dev_acc_state = None
-            self.dev_gyro_state = None
 
         self.kalman_filter = KalmanFilter(
             processed_input=self.processed_input,
@@ -209,8 +202,6 @@ class FloatService:
         Outlier correction/smoothing
         """
 
-        # NaN-handling
-        burst_contains_nan = NanHandling.burst_contains_nan(self.imu_mmap, start, end)
         # Check whether burst should be discarded because of NaN values
         if NanHandling.should_discard_burst(self.imu_mmap, start, end):
             self.discard_burst(start, end)
@@ -239,7 +230,7 @@ class FloatService:
 
         # If nan_handling() detected any NaN-values in the burst without discarding the burst, separate methods for
         # inserting processed input are used
-        if burst_contains_nan:
+        if NanHandling.burst_contains_nan(self.imu_mmap, start, end):
             interpolated_input = NanHandling.interpolate_missing_values(self.imu_mmap, start, end)
         else:
             interpolated_input = self.imu_mmap[start:end]
@@ -263,7 +254,6 @@ class FloatService:
     def run_processing_iterations(self, start: int, end: int):
         for i in range(start, end):
             self.wave_function(row_no=i)
-
             self.estimate_pose(row_no=i)
 
             # Adjust velocity and position damping factors
@@ -329,7 +319,11 @@ class FloatService:
 
         vert_velocity_bias = self.bias_estimators[cfg.vertical_velocity_identifier].value()
         # Vertical velocity is adjusted by bias and stored internally
-        self.vertical_velocity = self.dampened_vertical_velocity[row_no] - vert_velocity_bias
+        if self.dev_mode and cfg.ignore_vertical_velocity_bias:
+            self.vertical_velocity = self.dampened_vertical_velocity[row_no]
+        else:
+            self.vertical_velocity = self.dampened_vertical_velocity[row_no] - vert_velocity_bias
+
         # In development mode, store information on vertical velocity for each time step
         if self.dev_mode:
             self.dev_vertical_velocity[row_no] = self.vertical_velocity
@@ -353,7 +347,10 @@ class FloatService:
 
         vertical_position_bias = self.bias_estimators[cfg.vertical_position_identifier].value()
         # Vertical position is adjusted by the bias and stored as output
-        self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no] - vertical_position_bias
+        if self.dev_mode and cfg.ignore_vertical_position_bias:
+            self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no]
+        else:
+            self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no] - vertical_position_bias
 
         if self.dev_mode:
             self.vertical_pos_bias_array[row_no] = vertical_position_bias
@@ -475,7 +472,6 @@ class FloatService:
 
         # Set dev_mode storage
         if self.dev_mode:
-            self.dev_bank_angle[start:end] = 0.0
             self.dev_vertical_velocity[start:end] = 0.0
             self.dev_gyro_state[start:end] = 0.0
             self.dev_acc_state[start:end] = 0.0

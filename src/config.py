@@ -57,6 +57,9 @@ points_between_vertical_acc_bias_update = 256
 points_between_vertical_vel_bias_update = 32
 points_between_vertical_pos_bias_update = 8
 
+ignore_vertical_position_bias = False
+ignore_vertical_velocity_bias = False
+
 # Number of data points for calculating different means (prone to change)
 n_points_for_acc_mean = 4096
 n_points_for_gyro_mean = 4096
