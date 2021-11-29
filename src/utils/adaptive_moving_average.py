@@ -7,10 +7,10 @@ class AdaptiveMovingAverage:
     adaptive_average = 0.0
     alpha = 0.0
 
-    def __init__(self, alpha_min=0.01, alpha_max=1.0, alpha_gain=0.05, dev_mode: bool = False):
+    def __init__(self, alpha_min=0.01, alpha_max=1.0, alpha_gain=0.05, track_value: bool = False):
         self.alpha_tracker = AlphaTracker(alpha_min, alpha_max, alpha_gain)
-        self.dev_mode = dev_mode
-        if self.dev_mode:
+        self.track_value = track_value
+        if self.track_value:
             self.adaptive_average_array = []
             self.alpha_array = []
 
@@ -20,7 +20,7 @@ class AdaptiveMovingAverage:
 
         self.adaptive_average = self.alpha * sample + (1 - self.alpha) * self.adaptive_average
 
-        if self.dev_mode:
+        if self.track_value:
             self.adaptive_average_array.append(self.adaptive_average)
             self.alpha_array.append(self.alpha)
 

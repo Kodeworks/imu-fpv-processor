@@ -38,13 +38,14 @@ miniburst_size = 128
 
 # TODO: The claim below was accurate when assumption 1 wasn't true. The current threshold is lower and
 #       should be examined
-# Tests show that the module handles 70% randomly placed NaN-values. Threshold is set to 50% to accomodate
+# Tests show that the module handles 70% randomly placed NaN-values. Threshold is set to 50% to accommodate
 # for groupings of several NaN-values, which are more likely than a uniform distribution
 discard_burst_nan_threshold = 0.5
 
 # Adaptive Moving Average tuning
 adaptive_alpha_max = 0.5
 adaptive_alpha_gain = 0.01
+
 
 # Tuning
 # TODO: read file with tuning for each float

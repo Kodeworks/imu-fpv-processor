@@ -40,19 +40,18 @@ class MemMapUtils:
         return buffer_end, buffer_beginning
 
     @staticmethod
-    def get_contiguous_array_from_buffer(buffer: np.array, start_row: int, end_row: int, requested_size: int,
-                                         end_index: int):
-        if MemMapUtils.historic_data_is_contiguous(requested_size, end_row):
-            buffer_end_range, buffer_start_range = MemMapUtils.patched_buffer_indices(requested_size, start_row,
-                                                                                      end_index)
-            return np.concatenate(
-                buffer[buffer_end_range[0]:buffer_end_range[1], buffer[buffer_start_range[0]:buffer_start_range[1]]])
+    def get_array_with_min_size(arr: np.array, end: int, min_size: int, end_index: int):
+        return MemMapUtils.get_interval_with_min_size(arr, end - min_size, end, min_size, end_index)
 
     @staticmethod
-    # TODO: investigate if these are the same lol
+    def get_array_with_indices(arr: np.array, start: int, end: int, end_index: int):
+        return MemMapUtils.get_interval_with_min_size(arr, start, end, end - start, end_index)
+
+    @staticmethod
     def get_interval_with_min_size(arr: np.array, start: int, end: int, min_size: int, end_index: int):
         """
-               Hides the complexity of accessing our cyclic buffer and returns an array of the requested size at the requested location.
+               Hides the complexity of accessing our cyclic buffer and returns an array of the requested size at the
+               requested location.
                :param arr: the array to access
                :param start: Index of first row to get slice from
                :param end: Index of last row to get slice from
@@ -61,9 +60,9 @@ class MemMapUtils:
                """
         if end < min_size:
             # this means that start is between 0 and end
-            end_arr = arr[end_index-(min_size-end):end_index]
+            end_arr = arr[end_index - (min_size - end):end_index]
             start_arr = arr[:end]
             return np.concatenate([end_arr, start_arr])
         else:
-            adjusted_start = min(start, end-min_size)
+            adjusted_start = min(start, end - min_size)
             return arr[adjusted_start:end]

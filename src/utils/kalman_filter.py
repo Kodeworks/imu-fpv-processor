@@ -65,8 +65,8 @@ class KalmanFilter:
         # In development mode, store information on pure gyro-calculated angles
         if self.dev_mode:
             self.dev_gyro_state[row_no] = self.dev_gyro_state[row_no - 1] + \
-                                                 self.sampling_period * self.processed_input[row_no, 3:5]\
-                                                 * np.flip(np.cos(self.dev_gyro_state[row_no-1]))
+                                          self.sampling_period * self.processed_input[row_no, 3:5] \
+                                          * np.flip(np.cos(self.dev_gyro_state[row_no - 1]))
 
     def apriori_uncertainty(self):
         self.p_priori = self.p_posteriori + self.Q
@@ -99,7 +99,7 @@ class KalmanFilter:
         z[1] = 0.5 * np.pi - np.arccos(self.processed_input[row_no, 0] / a_abs)
 
         if self.dev_mode:
-            self.dev_acc_state[row_no:min(len(self.dev_acc_state), row_no+self.rows_per_kalman_use)] = z
+            self.dev_acc_state[row_no:min(len(self.dev_acc_state), row_no + self.rows_per_kalman_use)] = z
 
         return z
 
@@ -113,13 +113,13 @@ class KalmanFilter:
         """
         if abs(angle) > np.pi:
             if angle > 0.0:
-                if (angle % (2*np.pi)) > np.pi:
+                if (angle % (2 * np.pi)) > np.pi:
                     angle = (angle % np.pi) - np.pi
                 else:
                     angle = angle % np.pi
             else:
                 angle = -angle
-                if (angle % (2*np.pi)) > np.pi:
+                if (angle % (2 * np.pi)) > np.pi:
                     angle = (angle % np.pi) - np.pi
                 else:
                     angle = angle % np.pi

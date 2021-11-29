@@ -57,7 +57,6 @@ class FloatService:
         # Internal storage
         self.processed_input = np.zeros(shape=(self.input_len, 5), dtype=float)
         self.actual_vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
-        # TODO: proper vertical acceleration not used
         self.dampened_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
         self.dampened_vertical_position = np.zeros(shape=(self.input_len,), dtype=float)
         self.vertical_acceleration = 0.0
@@ -98,9 +97,6 @@ class FloatService:
             self.dev_gyro_state = np.zeros(shape=(self.input_len, 2), dtype=float)
             self.dev_acc_state = np.zeros(shape=(self.input_len, 2), dtype=float)
 
-            # TODO: Not currently used
-            self.n_bias_updates = np.zeros(shape=(5,), dtype=int)  # Gyro, xy acc, vert acc, vel, pos
-
             # Biases for each timestep are also kept for examination
             self.acc_bias_array = np.zeros(shape=(self.input_len, 3), dtype=float)
             self.gyro_bias_array = np.zeros(shape=(self.input_len, 2), dtype=float)
@@ -123,32 +119,27 @@ class FloatService:
         for acc_identifier in cfg.acc_identifiers:
             self.bias_estimators[acc_identifier] = BiasEstimator(cfg.points_between_acc_bias_update,
                                                                  use_moving_average=True,
-                                                                 track_bias=self.dev_mode,
-                                                                 bias_tracking_length=self.input_len)
+                                                                 track_bias=self.dev_mode)
 
         # Gyro biases
         for gyro_identifier in cfg.gyro_identifiers:
             self.bias_estimators[gyro_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update,
                                                                   use_moving_average=True,
-                                                                  track_bias=self.dev_mode,
-                                                                  bias_tracking_length=self.input_len)
+                                                                  track_bias=self.dev_mode)
 
         # Calculated vertical biases
         self.bias_estimators[cfg.vertical_acc_identifier] = BiasEstimator(cfg.points_between_vertical_acc_bias_update,
                                                                           expected_value=cfg.gravitational_constant,
                                                                           use_moving_average=False,
-                                                                          track_bias=self.dev_mode,
-                                                                          bias_tracking_length=self.input_len)
+                                                                          track_bias=self.dev_mode)
         self.bias_estimators[cfg.vertical_velocity_identifier] = BiasEstimator(
             cfg.points_between_vertical_vel_bias_update,
             use_moving_average=False,
-            track_bias=self.dev_mode,
-            bias_tracking_length=self.input_len)
+            track_bias=self.dev_mode)
         self.bias_estimators[cfg.vertical_position_identifier] = BiasEstimator(
             cfg.points_between_vertical_pos_bias_update,
             use_moving_average=False,
-            track_bias=self.dev_mode,
-            bias_tracking_length=self.input_len)
+            track_bias=self.dev_mode)
 
     def process(self, number_of_rows: int):
         """
@@ -211,9 +202,8 @@ class FloatService:
             self.burst_is_discarded = False
 
         # Update gyroscope and accelerometer bias
-        # TODO: possible one-off mistakes with last_valid
-        imu_data = MemMapUtils.get_interval_with_min_size(self.imu_mmap, start - cfg.n_points_for_acc_mean, start,
-                                                          cfg.n_points_for_acc_mean, self.last_valid)
+        imu_data = MemMapUtils.get_array_with_min_size(self.imu_mmap, start,
+                                                       cfg.n_points_for_acc_mean, self.last_valid)
 
         for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifiers[0]:cfg.acc_identifiers[-1] + 1]):
             bias_estimator.update(imu_data[:, cfg.acc_identifiers[idx]], start)
@@ -310,14 +300,13 @@ class FloatService:
 
         # If a number of rows equal to or greater than the threshold for updating vertical vel bias has been traversed,
         # update vertical velocity bias.
-        vertical_vel = MemMapUtils.get_interval_with_min_size(self.dampened_vertical_velocity,
-                                                              row_no - cfg.n_points_for_vel_mean, row_no,
-                                                              cfg.n_points_for_vel_mean, self.last_valid)
+        vertical_vel = MemMapUtils.get_array_with_min_size(self.dampened_vertical_velocity, row_no,
+                                                           cfg.n_points_for_vel_mean, self.last_valid)
 
         self.bias_estimators[cfg.vertical_velocity_identifier].update(vertical_vel, row_no)
         self.biases[cfg.vertical_velocity_identifier] = self.bias_estimators[cfg.vertical_velocity_identifier].value()
+        vert_velocity_bias = self.biases[cfg.vertical_velocity_identifier]
 
-        vert_velocity_bias = self.bias_estimators[cfg.vertical_velocity_identifier].value()
         # Vertical velocity is adjusted by bias and stored internally
         if self.dev_mode and cfg.ignore_vertical_velocity_bias:
             self.vertical_velocity = self.dampened_vertical_velocity[row_no]
@@ -338,14 +327,13 @@ class FloatService:
 
         # If a number of rows equal to or greater than the threshold for updating vertical pos bias has been traversed,
         # update vertical position bias.
-        vertical_positions = MemMapUtils.get_interval_with_min_size(self.dampened_vertical_position,
-                                                                    row_no - cfg.n_points_for_vel_mean, row_no,
-                                                                    cfg.n_points_for_vel_mean, self.last_valid)
+        vertical_positions = MemMapUtils.get_array_with_min_size(self.dampened_vertical_position, row_no,
+                                                                 cfg.n_points_for_vel_mean, self.last_valid)
 
         self.bias_estimators[cfg.vertical_position_identifier].update(vertical_positions, row_no)
         self.biases[cfg.vertical_position_identifier] = self.bias_estimators[cfg.vertical_position_identifier].value()
+        vertical_position_bias = self.biases[cfg.vertical_position_identifier]
 
-        vertical_position_bias = self.bias_estimators[cfg.vertical_position_identifier].value()
         # Vertical position is adjusted by the bias and stored as output
         if self.dev_mode and cfg.ignore_vertical_position_bias:
             self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no]
@@ -377,12 +365,10 @@ class FloatService:
         if row_no - self.last_fft < cfg.n_points_between_fft:
             return
 
-        # TODO: why is self.last_row + 1 used here instead of row_no ?
         # First, we do a transform of the vertical acceleration signal
-        vertical_acceleration = MemMapUtils.get_interval_with_min_size(self.actual_vertical_acceleration,
-                                                                       self.last_row + 1 - cfg.n_points_for_fft,
-                                                                       self.last_row + 1, cfg.n_points_for_fft,
-                                                                       self.last_valid)
+        vertical_acceleration = MemMapUtils.get_array_with_min_size(self.actual_vertical_acceleration,
+                                                                    self.last_row + 1, cfg.n_points_for_fft,
+                                                                    self.last_valid)
 
         fourier_transform = fft(vertical_acceleration)
 
@@ -465,8 +451,8 @@ class FloatService:
         # Set processed input
         self.processed_input[start:end, 0:5] = np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
         self.actual_vertical_acceleration[start:end] = 0.0
-        self.dampened_vertical_velocity[start:end] = self.bias_estimators[cfg.vertical_velocity_identifier]
-        self.dampened_vertical_position[start:end] = self.bias_estimators[cfg.vertical_position_identifier]
+        self.dampened_vertical_velocity[start:end] = self.biases[cfg.vertical_velocity_identifier]
+        self.dampened_vertical_position[start:end] = self.biases[cfg.vertical_position_identifier]
         # self.vertical_acceleration and self.vertical_velocity are left unhandled since
         # they are calculated before use anyways
 
@@ -475,10 +461,10 @@ class FloatService:
             self.dev_vertical_velocity[start:end] = 0.0
             self.dev_gyro_state[start:end] = 0.0
             self.dev_acc_state[start:end] = 0.0
-            self.gyro_bias_array[start:end] = np.array(bias.value() for bias in self.bias_estimators[0:2])
+            self.gyro_bias_array[start:end] = self.biases[0:2]
             self.acc_bias_array[start:end] = np.array([0.0, 0.0, 0.0])
-            self.vertical_vel_bias_array[start:end] = self.bias_estimators[cfg.vertical_velocity_identifier].value()
-            self.vertical_pos_bias_array[start:end] = self.bias_estimators[cfg.vertical_position_identifier].value()
+            self.vertical_vel_bias_array[start:end] = self.biases[cfg.vertical_velocity_identifier]
+            self.vertical_pos_bias_array[start:end] = self.biases[cfg.vertical_position_identifier]
 
         # Set output
         self.orientation_mmap[start:end] = np.array([0.0, 0.0, 0.0])
