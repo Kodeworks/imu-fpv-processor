@@ -14,14 +14,14 @@ from scipy.fft import fft
 from scipy.signal import butter
 
 import config as cfg
-from src.utils.bias_estimator import BiasEstimator
-from src.utils.damping import Damping
-from src.utils.kalman_filter import KalmanFilter
-from src.utils.low_pass_filter import LowPassFilter
-from src.utils.mem_map_utils import MemMapUtils
-from src.utils.nan_handling import NanHandling
-from src.utils.rotations import Rotations
-from src.utils.utils import Utils
+from utils.bias_estimator import BiasEstimator
+from utils.damping import Damping
+from utils.kalman_filter import KalmanFilter
+from utils.low_pass_filter import LowPassFilter
+from utils.mem_map_utils import MemMapUtils
+from utils.nan_handling import NanHandling
+from utils.rotations import Rotations
+from utils.utils import Utils
 
 # The operating buffer size of FloatService should be a global variable so that it may be set once by some other process
 global n_rows

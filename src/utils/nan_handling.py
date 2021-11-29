@@ -1,5 +1,5 @@
 import numpy as np
-import src.config as cfg
+import config as cfg
 
 
 class NanHandling:

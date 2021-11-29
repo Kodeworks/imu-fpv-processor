@@ -1,7 +1,8 @@
 import numpy as np
-import src.config as cfg
-from src.utils.adaptive_moving_average import AdaptiveMovingAverage
-from src.utils.mem_map_utils import MemMapUtils
+
+import config as cfg
+from utils.adaptive_moving_average import AdaptiveMovingAverage
+
 
 # TODO: handle this
 # def update_counters_on_buffer_reuse(self):

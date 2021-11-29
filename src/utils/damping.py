@@ -1,6 +1,3 @@
-import numpy as np
-
-
 class Damping:
 
     def __init__(self, initial_damping: float, damping_increment: float, max_damping: float,

@@ -4,8 +4,9 @@ from scipy.signal import butter, filtfilt
 #
 # from src import float_service as fs, float_service_dev_utils as fsdu, globals as g
 
-import src.float_service as fs
-import src.float_service_utils as fsdu
+import float_service as fs
+import utils.kalman_filter
+import utils.rotations
 
 # def test_low_pass_filter_input():
 #     # TODO: FIX test. processed_input and input cannot be compared the way it is being done
@@ -176,8 +177,7 @@ import src.float_service_utils as fsdu
 #     #     self.passed_messages.append(f'{self.tc[1]}PASSED{self.tc[0]}\n'
 #     #                                 'clean_data_test()\n'
 #     #                                 f'{dc_tests_passed}/{data_cleaning_tests} tests passed.\n')
-import src.utils.kalman_filter
-import src.utils.rotations
+
 
 
 def test_nan_handling():
@@ -580,7 +580,7 @@ def test_get_corrected_angle():
 
     for i in range(len(input_angles)):
         assert abs(
-            src.utils.kalman_filter.KalmanFilter.get_corrected_angle(input_angles[i]) - output_angles[i]) < 0.00001
+            utils.kalman_filter.KalmanFilter.get_corrected_angle(input_angles[i]) - output_angles[i]) < 0.00001
 
 
 def test_rotate_system():
@@ -718,7 +718,7 @@ def test_rotate_system():
     rotation_tests = 0
     passed_rotation_tests = 0
 
-    float_service = src.utils.rotations.Rotations()
+    float_service = utils.rotations.Rotations()
 
     #                                          Testing no rotation
 

@@ -4,8 +4,8 @@ from scipy.fft import fft
 
 import config as cfg
 
-from src.float_service import FloatService
-from src.float_service_utils import ProcessSimulator
+from float_service import FloatService
+from float_service_utils import ProcessSimulator
 
 
 class FloatServiceStats:
@@ -104,17 +104,11 @@ class FloatServiceStats:
         processed_z_acc, = plt.plot(float_service.processed_input[:, 2],
                                     c='tab:green',
                                     label='Local z-acc, processed')
-        proper_vert_acc, = plt.plot(float_service.proper_vertical_acceleration,
-                                    c='xkcd:cyan',
-                                    label='Proper vert. acc')
         actual_z_acc, = plt.plot(float_service.actual_vertical_acceleration,
                                  c='tab:purple',
                                  label='Actual vert. acc')
-        bank_angle, = plt.plot(float_service.dev_bank_angle,
-                               c='b',
-                               label='Bank angle')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
-        plt.legend(handles=[local_z_acc, processed_z_acc, proper_vert_acc, actual_z_acc, bank_angle])
+        plt.legend(handles=[local_z_acc, processed_z_acc, actual_z_acc])
 
     @staticmethod
     def fft_spectrum(arr, freq):
