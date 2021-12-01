@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from os.path import abspath
 from pathlib import Path
 
 import numpy as np
@@ -218,7 +219,7 @@ class FloatServiceStats:
 
 if __name__ == '__main__':
     # Grab the path to the data folder relative to this file, regardless of where we invoke it from
-    pwd = Path(__file__)
+    pwd = Path(abspath(__file__))
     data = pwd.parent.parent / "data"
 
     # Default options
