@@ -1,3 +1,6 @@
+from argparse import ArgumentParser
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft
@@ -214,9 +217,27 @@ class FloatServiceStats:
 
 
 if __name__ == '__main__':
-    data_path = '../data/wave_like_office_generated_data_210507_1529.hdf5'
-    sensor_id = '5'
-    burst_size = 1000
+    # Grab the path to the data folder relative to this file, regardless of where we invoke it from
+    pwd = Path(__file__)
+    data = pwd.parent.parent / "data"
+
+    # Default options
+    default_data_path = str(data / "wave_like_office_generated_data_210507_1529.hdf5")
+    default_sensor_id = "5"
+    default_burst_size = 1000
+
+    # Create a CLI interface and set some default values
+    parser = ArgumentParser("float-service-stats", description="Float Service Statistics")
+    parser.add_argument("--data_path", help="The path to the HDF5 file containing the data", default=default_data_path)
+    parser.add_argument("--sensor_id", default="5", help="The sensor ID number")
+    parser.add_argument("--burst_size", default=1000, type=int, help="The burst size")
+
+    # Parse and set the options
+    args = parser.parse_args()
+    data_path = args.data_path
+    sensor_id = args.sensor_id
+    burst_size = args.burst_size
+
     process_sim = ProcessSimulator(
         hdf5_path=data_path,
         dev_mode=True
