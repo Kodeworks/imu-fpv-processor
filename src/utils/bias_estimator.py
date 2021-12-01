@@ -13,37 +13,31 @@ class BiasEstimator:
 
         self.use_moving_average = use_moving_average
         # Current best estimate
+        self.bias: float = 0
+
         if use_moving_average:
             self.adaptive_bias = AdaptiveMovingAverage(0.01, cfg.adaptive_alpha_max, cfg.adaptive_alpha_gain,
                                                        track_bias)
-        self.bias = 0
+            self.adaptive_bias.update(self.bias)
 
         self.expected_value = expected_value
-        self.last_bias_row = -1  # TODO: sometimes initialized to 0
+        self.points_since_update = 0
         self.points_between_updates = points_between_updates
 
     # TODO: data sent in is ensured to be continuous
     # cyclic buffer is dealt with outside of the bias estimator
-    def update(self, measurements: np.array, row_no: int):
+    def update(self, measurements: np.array):
         # Only update bias if enough data has arrived
-        if row_no - self.last_bias_row >= self.points_between_updates:
+        if self.points_since_update >= self.points_between_updates:
+            self.points_since_update = 0
             bias_sliding_window = np.nanmean(measurements, axis=0) - self.expected_value
-
             if self.use_moving_average:
                 self.adaptive_bias.update(bias_sliding_window)
                 self.bias = self.adaptive_bias.get_state()
             else:
                 self.bias = bias_sliding_window
-
-            self.last_bias_row = row_no
+        else:
+            self.points_since_update += measurements.shape[0]
 
     def value(self):
         return self.bias
-
-    def update_counter(self, last_valid: int):
-        self.last_bias_row = self.last_bias_row - last_valid - 1
-
-
-"""
-Everything below this point is the code to rewrite
-"""

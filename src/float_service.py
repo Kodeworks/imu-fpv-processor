@@ -14,6 +14,7 @@ from scipy.fft import fft
 from scipy.signal import butter
 
 import config as cfg
+from utils.cyclic_array import CyclicArray
 from utils.bias_estimator import BiasEstimator
 from utils.damping import Damping
 from utils.kalman_filter import KalmanFilter
@@ -41,12 +42,16 @@ class FloatService:
         :param output: np.memmap/np.ndarray, output buffer
         :param dev_mode: bool, dev_mode enables features only usable in development
         """
+        np.seterr(all='raise')
         self.name = name
         self.dev_mode = dev_mode
         self.imu_mmap = input  # Input = [acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z]
         self.orientation_mmap = output  # Output = [x_angle, y_angle, vertical_pos]
         self.input_len = np.shape(input)[0]
+        print(f"input length: {self.input_len}")
         self.last_row = -1
+
+        self.points_since_wave_update = 0
 
         # Index of highest valid index from last time the buffer counter was reset
         self.last_valid = self.input_len - 1
@@ -55,13 +60,15 @@ class FloatService:
         self.burst_is_discarded = False
 
         # Internal storage
+        # TODO: from now only used for plotting when self.dev_mode
+        ################
         self.processed_input = np.zeros(shape=(self.input_len, 5), dtype=float)
-        self.actual_vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
-        self.dampened_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
-        self.dampened_vertical_position = np.zeros(shape=(self.input_len,), dtype=float)
-        self.vertical_acceleration = 0.0
-        self.vertical_velocity = 0.0
 
+        self.vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
+        self.vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
+        self.vertical_position = np.zeros(shape=(self.input_len,), dtype=float)
+
+        ##############
         self.bias_estimators = np.empty(shape=(9,), dtype=BiasEstimator)
         self.initialize_bias_estimators()
         self.biases = np.empty(shape=(9,), dtype=float)
@@ -69,10 +76,21 @@ class FloatService:
         # Weights for weighted averages
         self.n_points_for_pos_mean = cfg.n_points_for_pos_mean_initial
 
+        self.n_inputs = max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean)
+        self.input_tracker = CyclicArray(self.n_inputs, dimensions=6)
+        self.processed_input_tracker = CyclicArray(cfg.min_filter_size, dimensions=5)
+        self.vertical_acceleration_tracker = CyclicArray(cfg.n_points_for_acc_mean)
+        self.vertical_velocity_tracker = CyclicArray(cfg.n_points_for_vel_mean)
+        self.vertical_velocity_bias_adjusted_tracker = CyclicArray(cfg.n_points_for_vel_mean)
+
+        # TODO: size not constant
+        self.vertical_position_tracker = CyclicArray(self.n_points_for_pos_mean)
+        self.orientations_tracker = CyclicArray(cfg.min_filter_size, dimensions=3)
+
         # damping factors to counteract integration drift (adjusted based on current best estimate)
-        self.vel_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_damping_factor_end,
+        self.vel_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_minimum_damping,
                                    cfg.vel_damping_factor_big, cfg.damping_factor_dampener)
-        self.pos_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_damping_factor_end,
+        self.pos_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_minimum_damping,
                                    cfg.vel_damping_factor_big, cfg.damping_factor_dampener)
 
         # Low-pass filtering coefficients
@@ -83,7 +101,6 @@ class FloatService:
         # Variables for generating and storing information on the wave function
         self.wave_function_buffer = np.zeros(shape=(cfg.n_saved_wave_functions, cfg.n_points_for_fft // 2),
                                              dtype=float)
-        self.last_fft = -1
         # Pointer points to the last saved wave function
         self.wave_function_buffer_pointer = -1
 
@@ -106,8 +123,6 @@ class FloatService:
             warnings.filterwarnings('error')
 
         self.kalman_filter = KalmanFilter(
-            processed_input=self.processed_input,
-            output=self.orientation_mmap,
             sampling_period=cfg.sampling_period,
             rows_per_kalman_use=cfg.rows_per_kalman_use,
             dev_acc_state=self.dev_acc_state,
@@ -147,44 +162,58 @@ class FloatService:
         :param number_of_rows: Number of input data rows to be processed.
         Format of output: N rows x [x-angle, y-angle, vertical position]
         """
-        # TODO: end goal - only create an array of sufficient size from the cyclic array once,
-        #  and use it for the remainder of the iteration
+        orientations = np.empty((number_of_rows, 3))
+
+        start, end, step = self.get_process_step(number_of_rows)
+        for start_i in range(start, end, step):
+
+            end_i = min(end, start_i + step)
+            current_input = self.imu_mmap[start_i:end_i]
+            self.input_tracker.enqueue_n(current_input)
+
+            processed_input = self.preprocess_data(current_input)
+            if not self.burst_is_discarded:
+                self.processed_input_tracker.enqueue_n(processed_input)
+            else:
+                self.discard_burst(start_i, end_i)
+                continue
+
+            if self.dev_mode:
+                self.processed_input[start_i:end_i] = processed_input
+                self.acc_bias_array[start - cfg.n_points_for_acc_mean:start] = self.biases[0:3]
+                self.gyro_bias_array[start - cfg.n_points_for_gyro_mean:start] = self.biases[3:5]
+
+            orientations[start_i - start:end_i - start] = self.run_processing_iterations(processed_input, start_i)
+
+        if not self.burst_is_discarded:
+            orientations = self.post_process_output(orientations)
+            self.orientations_tracker.enqueue_n(orientations)
+
+            if self.dev_mode:
+                self.orientation_mmap[start:end] = orientations
+
+        self.last_row = end - 1
+
+    def get_process_step(self, number_of_rows):
         if self.last_row + number_of_rows + 1 <= n_rows:
             start = self.last_row + 1
         else:
             start = 0
             self.handle_buffer_wrapping()
-
         end = start + number_of_rows
-
         if cfg.use_minibursts:
             step = cfg.miniburst_size
         else:
             step = number_of_rows
-
-        for start_i in range(start, end, step):
-            end_i = min(end, start_i + step)
-            self.preprocess_data(start_i, end_i)
-
-            # Check whether burst is declared discarded
-            if not self.burst_is_discarded:
-                self.run_processing_iterations(start_i, end_i)
-
-        if not self.burst_is_discarded:
-            self.postprocess_output(start, end)
-
-        self.last_row = end - 1
+        return start, end, step
 
     def handle_buffer_wrapping(self):
         # Information on last actual buffer index is kept
         self.last_valid = self.last_row
         # Previously update_counters_on_buffer_reuse()
-        self.last_fft = self.last_fft - self.last_valid - 1
-        for bias_estimator in self.bias_estimators:
-            bias_estimator.update_counter(self.last_valid)
         self.copy_data_to_last_index_on_buffer_reuse()
 
-    def preprocess_data(self, start: int, end: int):
+    def preprocess_data(self, current_input: np.array):
         """
         NaN-handling
         Bias updates
@@ -194,188 +223,207 @@ class FloatService:
         """
 
         # Check whether burst should be discarded because of NaN values
-        if NanHandling.should_discard_burst(self.imu_mmap, start, end):
-            self.discard_burst(start, end)
+        if NanHandling.should_discard_burst(current_input):
             self.burst_is_discarded = True
-            return
+            return None
         else:
             self.burst_is_discarded = False
 
         # Update gyroscope and accelerometer bias
-        imu_data = MemMapUtils.get_array_with_min_size(self.imu_mmap, start,
-                                                       cfg.n_points_for_acc_mean, self.last_valid)
+        imu_data = self.input_tracker.to_array()
+        #print(f"imu_data: {imu_data.shape}")
 
         for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifiers[0]:cfg.acc_identifiers[-1] + 1]):
-            bias_estimator.update(imu_data[:, cfg.acc_identifiers[idx]], start)
+            bias_estimator.update(imu_data[:, cfg.acc_identifiers[idx]])
 
         for idx, bias_estimator in enumerate(
                 self.bias_estimators[cfg.gyro_identifiers[0]:cfg.gyro_identifiers[-1] + 1]):
-            bias_estimator.update(imu_data[:, cfg.gyro_identifiers[idx]], start)
+            bias_estimator.update(imu_data[:, cfg.gyro_identifiers[idx]])
 
         self.biases = np.array(list(bias.value() for bias in self.bias_estimators))
 
-        if self.dev_mode:
-            self.acc_bias_array[start - cfg.n_points_for_acc_mean:start] = self.biases[0:3]
-            self.gyro_bias_array[start - cfg.n_points_for_acc_mean:start] = self.biases[3:5]
-
         # If nan_handling() detected any NaN-values in the burst without discarding the burst, separate methods for
         # inserting processed input are used
-        if NanHandling.burst_contains_nan(self.imu_mmap, start, end):
-            interpolated_input = NanHandling.interpolate_missing_values(self.imu_mmap, start, end)
-        else:
-            interpolated_input = self.imu_mmap[start:end]
+        if NanHandling.burst_contains_nan(current_input):
+            current_input = NanHandling.interpolate_missing_values(current_input)
 
-        self.set_processed_gyro_input(interpolated_input, start, end)
-        self.set_processed_acc_input(interpolated_input, start, end)
+        processed_acc = self.get_processed_acc_input(current_input)
+        processed_gyro = self.get_processed_gyro_input(current_input)
 
         # Convert angular velocities from deg/s to rad/s
-        self.processed_input[start: end, 3:5] = Utils.degrees_to_radians(self.processed_input[start:end, 3:5])
+        processed_gyro = Utils.degrees_to_radians(processed_gyro)
 
         # Transform gyro data and a single axis of accelerometer data so that the input matches mathematical convention
-        self.convert_to_right_handed_coords(start=start, end=end)
+        processed_input = self.convert_to_right_handed_coords(np.concatenate((processed_acc, processed_gyro), axis=1))
 
-        # Filtering of both accelerometer and gyroscope data using a low-pass filter
-        array_to_filter = MemMapUtils.get_interval_with_min_size(self.processed_input, start, end,
-                                                                 cfg.min_filter_size, self.last_valid)
+        input_size = current_input.shape[0]
 
-        filtered_array = LowPassFilter.process(array_to_filter, self.low_a, self.low_b, end - start)
-        self.processed_input[start:end] = filtered_array
+        # self.processed_input_tracker.enqueue_n(processed_input)
+        if input_size < cfg.min_filter_size:
+            processed_input = np.concatenate((self.processed_input_tracker.to_array(), processed_input))[
+                              -cfg.min_filter_size:]
 
-    def run_processing_iterations(self, start: int, end: int):
-        for i in range(start, end):
-            self.wave_function(row_no=i)
-            self.estimate_pose(row_no=i)
+        return LowPassFilter.process(processed_input, self.low_a, self.low_b, input_size)
+
+    def run_processing_iterations(self, processed_inputs: np.array, start_row: int):
+
+        orientations = np.empty((processed_inputs.shape[0], 3))
+        for row in range(processed_inputs.shape[0]):
+            prev_accelerations = self.vertical_acceleration_tracker.to_array()
+            self.wave_function(prev_accelerations)
+
+            orientations[row] = self.estimate_pose(processed_inputs[row], start_row + row)
+            self.orientations_tracker.enqueue(orientations[row])
 
             # Adjust velocity and position damping factors
             self.pos_damping.update()
             self.vel_damping.update()
 
-    def estimate_pose(self, row_no: int):
+        return orientations
+
+    def estimate_pose(self, processed_input: np.array, row_number: int):
         # A Kalman filter iteration is performed to estimate x- and y-angles,
         # which later makes up the bank angle
-        if row_no % cfg.rows_per_kalman_use == 0:
-            self.kalman_filter.iterate(row_no=row_no)
-            self.orientation_mmap[row_no, 0:2] = self.kalman_filter.get_state_estimate()
+        orientation = np.empty(3)
+        if row_number % cfg.rows_per_kalman_use == 0:
+            self.kalman_filter.iterate(processed_input)
+            # self.orientation_mmap[row_no, 0:2]
+            orientation[0:2] = self.kalman_filter.get_state_estimate()
         else:
-            self.estimate_angles_using_gyro(row_no)
-            self.kalman_filter.state_posteriori = self.orientation_mmap[row_no, 0:2]
+            prev_orientation = self.orientations_tracker.tail()
+            orientation[0:2] = self.estimate_angles_using_gyro(processed_input, prev_orientation)
+            self.kalman_filter.state_posteriori = orientation[0:2]
+
+            if self.dev_mode:
+                self.dev_gyro_state[row_number] = self.dev_gyro_state[row_number - 1] + \
+                                                  cfg.sampling_period * self.processed_input[row_number, 3:5] \
+                                                  * np.flip(np.cos(self.dev_gyro_state[row_number - 1]))
 
         # Vertical acceleration, velocity and position is estimated and stored internally
-        self.estimate_vertical_acceleration(row_no=row_no)
-        self.estimate_vertical_velocity(row_no=row_no)
-        self.estimate_vertical_position(row_no=row_no)
+        vertical_acceleration = self.estimate_vertical_acceleration(processed_input, orientation[0:2])
 
-    def estimate_angles_using_gyro(self, row_no: int):
-        self.orientation_mmap[row_no, 0:2] = \
-            self.orientation_mmap[row_no - 1, 0:2] + \
-            cfg.sampling_period * self.processed_input[row_no, 3:5] \
-            * np.flip(np.cos(self.orientation_mmap[row_no - 1, 0:2]))
+        vertical_velocity = self.estimate_vertical_velocity(vertical_acceleration)
+        vertical_position = self.estimate_vertical_position(vertical_velocity)
+        # TODO: potentially add bias adjusted trackers
+
+        orientation[2] = vertical_position
+        self.orientations_tracker.enqueue(orientation)
+
+        # TODO: Save stuff, move somewhere else
+        #########################################################################
+        # Store information on vertical acceleration for wave function estimation
+        self.vertical_acceleration[row_number] = vertical_acceleration
+        self.vertical_velocity[row_number] = vertical_velocity
+        self.vertical_position[row_number] = vertical_position
+
+        # In development mode, store information on vertical velocity for each time step
         if self.dev_mode:
-            self.dev_gyro_state[row_no] = self.dev_gyro_state[row_no - 1] + \
-                                          cfg.sampling_period * self.processed_input[row_no, 3:5] \
-                                          * np.flip(np.cos(self.dev_gyro_state[row_no - 1]))
+            self.dev_vertical_velocity[row_number] = vertical_velocity
 
-    def estimate_vertical_acceleration(self, row_no: int):
+            self.vertical_vel_bias_array[row_number] = self.biases[cfg.vertical_velocity_identifier]
+
+        if self.dev_mode:
+            self.vertical_pos_bias_array[row_number] = self.biases[cfg.vertical_position_identifier]
+
+        ##########################################################################
+
+        return orientation
+
+    @staticmethod
+    def estimate_angles_using_gyro(processed_input: np.array, prev_orientation: np.array):
+        return prev_orientation[0:2] + cfg.sampling_period * processed_input[3:5] * np.flip(
+            np.cos(prev_orientation[0:2]))
+
+    @staticmethod
+    def estimate_vertical_acceleration(processed_input, angles):
         """
         Estimates vertical acceleration of the sensor.
         Rotates the set of acceleration vectors produced by the angles found in angle estimation, then uses the
         z-component of the resulting set as the vertical acceleration of the sensor.
         """
-
-        a_vector = self.processed_input[row_no, 0:3]
-        inverse_orientation = [-self.orientation_mmap[row_no, 0], -self.orientation_mmap[row_no, 1], 0.0]
+        a_vector = processed_input[0:3]
+        inverse_orientation = [-angles[0], -angles[1], 0.0]
         global_a_vector = Rotations.rotate_system(sys_ax=a_vector, sensor_angles=inverse_orientation)
 
-        self.vertical_acceleration = - (global_a_vector[2] + cfg.gravitational_constant)
+        return -(global_a_vector[2] + cfg.gravitational_constant)
 
-        # Store information on vertical acceleration for wave function estimation
-        self.actual_vertical_acceleration[row_no] = self.vertical_acceleration
+    def estimate_vertical_velocity(self, vertical_acceleration: int):
 
-    def estimate_vertical_velocity(self, row_no: int):
-        # Vertical velocity is updated using current vertical acceleration
-        self.dampened_vertical_velocity[row_no] = self.dampened_vertical_velocity[row_no - 1] + \
-                                                  cfg.sampling_period * self.vertical_acceleration
+        vertical_velocity = self.vertical_velocity_tracker.tail() + cfg.sampling_period * vertical_acceleration
         # Vertical velocity is adjusted by a damping factor to compensate for integration drift
-        self.dampened_vertical_velocity[row_no] -= self.dampened_vertical_velocity[row_no] * self.vel_damping.value()
+        vertical_velocity = vertical_velocity * (1 - self.vel_damping.value())
 
-        # If a number of rows equal to or greater than the threshold for updating vertical vel bias has been traversed,
-        # update vertical velocity bias.
-        vertical_vel = MemMapUtils.get_array_with_min_size(self.dampened_vertical_velocity, row_no,
-                                                           cfg.n_points_for_vel_mean, self.last_valid)
+        self.vertical_velocity_tracker.enqueue(vertical_velocity)
+        vertical_velocities = self.vertical_velocity_tracker.to_array()
 
-        self.bias_estimators[cfg.vertical_velocity_identifier].update(vertical_vel, row_no)
-        self.biases[cfg.vertical_velocity_identifier] = self.bias_estimators[cfg.vertical_velocity_identifier].value()
-        vert_velocity_bias = self.biases[cfg.vertical_velocity_identifier]
+        # If a number of rows equal to or greater than the threshold for updating bias has been reached, update bias
+        #print(vertical_velocities)
+        bias = self.update_bias(cfg.vertical_velocity_identifier, vertical_velocities)
 
-        # Vertical velocity is adjusted by bias and stored internally
-        if self.dev_mode and cfg.ignore_vertical_velocity_bias:
-            self.vertical_velocity = self.dampened_vertical_velocity[row_no]
+        if cfg.ignore_vertical_velocity_bias:
+            return vertical_velocity
         else:
-            self.vertical_velocity = self.dampened_vertical_velocity[row_no] - vert_velocity_bias
+            return vertical_velocity - bias
 
-        # In development mode, store information on vertical velocity for each time step
-        if self.dev_mode:
-            self.dev_vertical_velocity[row_no] = self.vertical_velocity
-            self.vertical_vel_bias_array[row_no] = vert_velocity_bias
+    def update_bias(self, identifier, values):
+        self.bias_estimators[identifier].update(values)
+        self.biases[identifier] = self.bias_estimators[identifier].value()
+        return self.biases[identifier]
 
-    def estimate_vertical_position(self, row_no: int):
+    def estimate_vertical_position(self, vertical_velocity: int):
         # Vertical position is updated using current vertical velocity
-        self.dampened_vertical_position[row_no] = self.dampened_vertical_position[row_no - 1] + \
-                                                  cfg.sampling_period * self.vertical_velocity
+        vertical_position = self.vertical_position_tracker.tail() + cfg.sampling_period * vertical_velocity
         # Vertical position is adjusted by a damping factor to compensate for integration drift
-        self.dampened_vertical_position[row_no] -= self.dampened_vertical_position[row_no] * self.pos_damping.value()
+        vertical_position = vertical_position * (1 - self.pos_damping.value())
 
-        # If a number of rows equal to or greater than the threshold for updating vertical pos bias has been traversed,
-        # update vertical position bias.
-        vertical_positions = MemMapUtils.get_array_with_min_size(self.dampened_vertical_position, row_no,
-                                                                 cfg.n_points_for_vel_mean, self.last_valid)
+        self.vertical_position_tracker.enqueue(vertical_position)
 
-        self.bias_estimators[cfg.vertical_position_identifier].update(vertical_positions, row_no)
-        self.biases[cfg.vertical_position_identifier] = self.bias_estimators[cfg.vertical_position_identifier].value()
-        vertical_position_bias = self.biases[cfg.vertical_position_identifier]
+        # If a number of rows equal to or greater than the threshold for updating  bias has been traversed, update bias
+        vertical_positions = self.vertical_position_tracker.to_array()
+        bias = self.update_bias(cfg.vertical_position_identifier, vertical_positions)
 
         # Vertical position is adjusted by the bias and stored as output
-        if self.dev_mode and cfg.ignore_vertical_position_bias:
-            self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no]
+        if cfg.ignore_vertical_position_bias:
+            return vertical_position
         else:
-            self.orientation_mmap[row_no, 2] = self.dampened_vertical_position[row_no] - vertical_position_bias
-
-        if self.dev_mode:
-            self.vertical_pos_bias_array[row_no] = vertical_position_bias
+            return vertical_position - bias
 
     def copy_data_to_last_index_on_buffer_reuse(self):
         # Since some methods use data indexed in [row_no-1], data from [self.last_valid] is copied to
         # [-1]. One could also check for start==0 in each of these methods but this is less expensive.
-        self.dampened_vertical_velocity[-1] = self.dampened_vertical_velocity[self.last_valid]
-        self.dampened_vertical_position[-1] = self.dampened_vertical_position[self.last_valid]
+        self.vertical_velocity[-1] = self.vertical_velocity[self.last_valid]
+        self.vertical_position[-1] = self.vertical_position[self.last_valid]
         self.orientation_mmap[-1] = self.orientation_mmap[self.last_valid]
         if self.dev_mode:
             self.dev_gyro_state[-1] = self.dev_gyro_state[self.last_valid]
 
-    def postprocess_output(self, start: int, end: int):
-        if not self.dev_mode or cfg.use_output_filtering:
-            array_to_filter = MemMapUtils.get_interval_with_min_size(self.orientation_mmap[:, 2], start, end,
-                                                                     cfg.min_filter_size, self.last_valid)
+    def post_process_output(self, current_orientations: np.array):
+        if self.dev_mode and not cfg.use_output_filtering:
+            return current_orientations
 
-            self.orientation_mmap[start:end, 2] = LowPassFilter.process(array_to_filter, self.low_a, self.low_b,
-                                                                        end - start)
+        numb_current_orientations = current_orientations.shape[0]
+        if numb_current_orientations < cfg.min_filter_size:
+            prev_orientations = self.orientations_tracker.to_array()
+            orientations = np.concatenate((prev_orientations, current_orientations))[-cfg.min_filter_size:]
+        else:
+            orientations = current_orientations
 
-    def wave_function(self, row_no: int):
+        return LowPassFilter.process(orientations, self.low_a, self.low_b,
+                                     numb_current_orientations)
+
+    def wave_function(self, prev_accelerations: np.array):
         # Check if it is time to perform a Fourier transform
-        if row_no - self.last_fft < cfg.n_points_between_fft:
+        if self.points_since_wave_update < cfg.n_points_between_fft:
+            self.points_since_wave_update += 1
             return
 
+        self.points_since_wave_update = 0
         # First, we do a transform of the vertical acceleration signal
-        vertical_acceleration = MemMapUtils.get_array_with_min_size(self.actual_vertical_acceleration,
-                                                                    self.last_row + 1, cfg.n_points_for_fft,
-                                                                    self.last_valid)
+        fourier_transform = fft(prev_accelerations[-cfg.n_points_for_fft:])
 
-        fourier_transform = fft(vertical_acceleration)
+        coefficient_array = 2.0 / cfg.n_points_for_fft * np.abs(fourier_transform[0:cfg.n_points_for_fft // 2])
+        self.save_wave_function(coefficient_array)
 
-        coeff_array = 2.0 / cfg.n_points_for_fft * np.abs(fourier_transform[0:cfg.n_points_for_fft // 2])
-        self.save_wave_function(coefficient_array=coeff_array)
-
-        self.last_fft = row_no
         if cfg.fft_aided_bias:
             self.update_position_bias_window_size()
 
@@ -408,35 +456,39 @@ class FloatService:
 
             # print(f'When last row was {self.last_row}, pos bias window size set to {self.n_points_for_pos_mean}')
 
-    def convert_to_right_handed_coords(self, start: int, end: int):
+    @staticmethod
+    def convert_to_right_handed_coords(processed_input: np.array):
         """
         From testing we know that the sensor output does not match mathematical convention. This method uses information
         provided in config.py to reverse all gyro axes and exactly one of the accelerometer axes.
-        :param start: First index of input to be reversed
-        :param end: First index not to be reversed
+        :param processed_input: array with the input to correct
         """
         if cfg.perform_axis_reversal:
             # Reverse gyro data
-            self.processed_input[start: end, 3:5] *= cfg.gyro_reversal_coefficient
-            # Reverse accelerometer data. Since positive direction of accelerometer and gyro is linked, the same gyro axis
-            # must be reversed again.
-            self.processed_input[start: end, cfg.axis_reversal_index] *= cfg.axis_reversal_coefficient
+            processed_input[:, 3:5] *= cfg.gyro_reversal_coefficient
+            # Reverse accelerometer data. Since positive direction of accelerometer and gyro is linked, the same gyro
+            # axis must be reversed again.
+            processed_input[:, cfg.axis_reversal_index] *= cfg.axis_reversal_coefficient
             if cfg.axis_reversal_index < 2:
-                self.processed_input[start: end, 3 + cfg.axis_reversal_index] *= cfg.axis_reversal_coefficient
+                processed_input[:, 3 + cfg.axis_reversal_index] *= cfg.axis_reversal_coefficient
 
-    def set_processed_acc_input(self, imu_array: np.array, start: int, end: int):
-        self.processed_input[start:end, 0:2] = (imu_array[:, 0:2] - self.biases[
-                                                                    0:2]) * cfg.gravitational_constant
-        self.processed_input[start:end, 2] = imu_array[:, 2] * cfg.gravitational_constant
+        return processed_input
 
-    def set_processed_gyro_input(self, imu_array: np.array, start: int, end: int):
+    def get_processed_acc_input(self, imu_array: np.array):
+        processed_input = np.empty((imu_array.shape[0], 3))
+        processed_input[:, 0:2] = (imu_array[:, 0:2] - self.biases[0:2]) * cfg.gravitational_constant
+        print(self.biases[0:3])
+        processed_input[:, 2] = imu_array[:, 2] * cfg.gravitational_constant
+        return processed_input
+
+    def get_processed_gyro_input(self, imu_array: np.array):
         """
         Adjusts gyro data using a sensor bias.
         :param imu_array: Array containing the processed imu measurements to use
         :param start: Index that slices the buffer part that is to be adjusted.
         :param end: Index that slices the buffer part that is to be adjusted.
         """
-        self.processed_input[start:end, 3:5] = imu_array[:, 3:5] - self.biases[3:5]
+        return imu_array[:, 3:5] - self.biases[3:5]
 
     def discard_burst(self, start: int, end: int):
         """
@@ -449,12 +501,12 @@ class FloatService:
         """
 
         # Set processed input
+        empty_inputs = np.empty((end - start, 5)) * np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
+        self.processed_input_tracker.enqueue_n(empty_inputs)
         self.processed_input[start:end, 0:5] = np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
-        self.actual_vertical_acceleration[start:end] = 0.0
-        self.dampened_vertical_velocity[start:end] = self.biases[cfg.vertical_velocity_identifier]
-        self.dampened_vertical_position[start:end] = self.biases[cfg.vertical_position_identifier]
-        # self.vertical_acceleration and self.vertical_velocity are left unhandled since
-        # they are calculated before use anyways
+        self.vertical_acceleration[start:end] = 0.0
+        self.vertical_velocity[start:end] = self.biases[cfg.vertical_velocity_identifier]
+        self.vertical_position[start:end] = self.biases[cfg.vertical_position_identifier]
 
         # Set dev_mode storage
         if self.dev_mode:
@@ -473,3 +525,8 @@ class FloatService:
         # the damping factors of speed and velocity. These factors are then themselves dampened subsequently.
         self.pos_damping.boost()
         self.vel_damping.boost()
+
+    def get_min_prev_array_size(self, input_size: int):
+        return max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean, cfg.n_points_for_fft,
+                   cfg.n_points_for_vel_mean, cfg.n_points_for_vel_mean,
+                   cfg.min_filter_size, self.n_points_for_pos_mean) - input_size

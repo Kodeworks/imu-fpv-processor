@@ -25,8 +25,8 @@ pos_damping_factor_initial = 0.001
 vel_damping_factor_big = 0.05
 pos_damping_factor_big = 0.05
 # damping factor end points
-vel_damping_factor_end = 0.001
-pos_damping_factor_end = 0.001
+vel_minimum_damping = 0.001
+pos_minimum_damping = 0.001
 # Finally, a damping factor to dampen the damping factors
 damping_factor_dampener = 0.05
 
