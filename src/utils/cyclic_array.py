@@ -1,5 +1,6 @@
 import numpy as np
 
+
 # TODO: rewrite to hold a max size so it doesnt need to rotate as often, still return arrays of the configured length
 #  needed because np.roll takes forever
 # all operations are O(1) and don't require copying the array
@@ -29,7 +30,7 @@ class CyclicArray:
                 zeros_shape = (length - initial_array_length,)
             else:
                 zeros_shape = (length - initial_array_length, dimensions)
-            self.queue = np.append(np.array(initial_array, dtype=np.int64),
+            self.queue = np.append(np.array(initial_array, dtype=float),
                                    np.zeros(zeros_shape, dtype=float))
             self.queue_tail = initial_array_length - 1
 
@@ -38,7 +39,7 @@ class CyclicArray:
 
     def to_array(self) -> np.array:
         head = (self.queue_tail + 1) % self.max_length
-        return np.roll(self.queue, -head)  # this will force a copy
+        return np.roll(self.queue, -head, axis=0)  # this will force a copy
 
     def enqueue(self, new_data: np.array) -> None:
         # move tail pointer forward then insert at the tail of the queue
@@ -62,7 +63,7 @@ class CyclicArray:
             self.queue_tail = new_tail
         else:
             # Handle wrapping
-            numb_append_to_end = self.max_length-(self.queue_tail + 1)
+            numb_append_to_end = self.max_length - (self.queue_tail + 1)
             self.queue[self.queue_tail + 1:] = new_data[:numb_append_to_end]
             self.queue[:new_tail + 1] = new_data[numb_append_to_end:]
             self.queue_tail = new_tail
@@ -90,21 +91,3 @@ class CyclicArray:
 
     def __str__(self):
         return "tail: " + str(self.queue_tail) + "\narray: " + str(self.queue)
-
-
-# Testing
-# hello = CyclicArray(6, dimensions=2)
-# hello.enqueue([1, 5])
-# hello.enqueue([2, 3])
-# hello.enqueue_n(np.array([[1, 2], [4, 5]]))
-# hello.enqueue_n(np.array([[11, 22], [44, 55]]))
-# hello.enqueue_n(np.array([[111, 222], [444, 555]]))
-#
-# hello.enqueue_n(np.array([[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 7]]))
-# hello.enqueue_n(np.array([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]))
-# hello.enqueue_n(np.array([[1, 1], [2, 2], [3, 3], [4, 4]]))
-# print(hello)
-# # Test wrapping:
-# hello.enqueue_n(np.array([[11, 11], [22, 22], [33, 33], [44, 44]]))
-#
-# print(hello)

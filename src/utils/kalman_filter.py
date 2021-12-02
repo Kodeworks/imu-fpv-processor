@@ -32,7 +32,6 @@ class KalmanFilter:
             self.dev_gyro_state = dev_gyro_state
             self.row_number = 0
 
-    # TODO: should take in a row instead of relying on row_no
     def iterate(self, processed_input: np.array):
         """
         An iteration of the Kalman filter.

@@ -47,28 +47,17 @@ class FloatService:
         self.dev_mode = dev_mode
         self.imu_mmap = input  # Input = [acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z]
         self.orientation_mmap = output  # Output = [x_angle, y_angle, vertical_pos]
-        self.input_len = np.shape(input)[0]
-        print(f"input length: {self.input_len}")
+        self.input_length = np.shape(input)[0]
         self.last_row = -1
 
         self.points_since_wave_update = 0
 
         # Index of highest valid index from last time the buffer counter was reset
-        self.last_valid = self.input_len - 1
+        self.last_valid = self.input_length - 1
 
         # How the burst is handled due to NaN values
         self.burst_is_discarded = False
 
-        # Internal storage
-        # TODO: from now only used for plotting when self.dev_mode
-        ################
-        self.processed_input = np.zeros(shape=(self.input_len, 5), dtype=float)
-
-        self.vertical_acceleration = np.zeros(shape=(self.input_len,), dtype=float)
-        self.vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
-        self.vertical_position = np.zeros(shape=(self.input_len,), dtype=float)
-
-        ##############
         self.bias_estimators = np.empty(shape=(9,), dtype=BiasEstimator)
         self.initialize_bias_estimators()
         self.biases = np.empty(shape=(9,), dtype=float)
@@ -76,6 +65,8 @@ class FloatService:
         # Weights for weighted averages
         self.n_points_for_pos_mean = cfg.n_points_for_pos_mean_initial
 
+        # Tracking of previous values
+        # TODO: create buffer with large size and wrapping at end (like it was)
         self.n_inputs = max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean)
         self.input_tracker = CyclicArray(self.n_inputs, dimensions=6)
         self.processed_input_tracker = CyclicArray(cfg.min_filter_size, dimensions=5)
@@ -109,16 +100,24 @@ class FloatService:
 
         # Development mode variables
         if dev_mode:
-            # Extended internal memory to examine different internal variables post processing
-            self.dev_vertical_velocity = np.zeros(shape=(self.input_len,), dtype=float)
-            self.dev_gyro_state = np.zeros(shape=(self.input_len, 2), dtype=float)
-            self.dev_acc_state = np.zeros(shape=(self.input_len, 2), dtype=float)
+            self.processed_input = np.zeros(shape=(self.input_length, 5), dtype=float)
+            self.vertical_acceleration = np.zeros(shape=(self.input_length,), dtype=float)
+            self.vertical_velocity = np.zeros(shape=(self.input_length,), dtype=float)
+            self.vertical_position = np.zeros(shape=(self.input_length,), dtype=float)
 
-            # Biases for each timestep are also kept for examination
-            self.acc_bias_array = np.zeros(shape=(self.input_len, 3), dtype=float)
-            self.gyro_bias_array = np.zeros(shape=(self.input_len, 2), dtype=float)
-            self.vertical_vel_bias_array = np.zeros(shape=(self.input_len,), dtype=float)
-            self.vertical_pos_bias_array = np.zeros(shape=(self.input_len,), dtype=float)
+            self.vertical_velocity_dampened = np.zeros(shape=(self.input_length,), dtype=float)
+            self.vertical_position_dampened = np.zeros(shape=(self.input_length,), dtype=float)
+
+            # Extended internal memory to examine different internal variables post processing
+            self.dev_vertical_velocity = np.zeros(shape=(self.input_length,), dtype=float)
+            self.dev_gyro_state = np.zeros(shape=(self.input_length, 2), dtype=float)
+            self.dev_acc_state = np.zeros(shape=(self.input_length, 2), dtype=float)
+
+            # Biases for each time step are also kept for examination
+            self.acc_bias_array = np.zeros(shape=(self.input_length, 3), dtype=float)
+            self.gyro_bias_array = np.zeros(shape=(self.input_length, 2), dtype=float)
+            self.vertical_vel_bias_array = np.zeros(shape=(self.input_length,), dtype=float)
+            self.vertical_pos_bias_array = np.zeros(shape=(self.input_length,), dtype=float)
 
             warnings.filterwarnings('error')
 
@@ -207,12 +206,6 @@ class FloatService:
             step = number_of_rows
         return start, end, step
 
-    def handle_buffer_wrapping(self):
-        # Information on last actual buffer index is kept
-        self.last_valid = self.last_row
-        # Previously update_counters_on_buffer_reuse()
-        self.copy_data_to_last_index_on_buffer_reuse()
-
     def preprocess_data(self, current_input: np.array):
         """
         NaN-handling
@@ -231,7 +224,6 @@ class FloatService:
 
         # Update gyroscope and accelerometer bias
         imu_data = self.input_tracker.to_array()
-        #print(f"imu_data: {imu_data.shape}")
 
         for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifiers[0]:cfg.acc_identifiers[-1] + 1]):
             bias_estimator.update(imu_data[:, cfg.acc_identifiers[idx]])
@@ -304,20 +296,21 @@ class FloatService:
 
         vertical_velocity = self.estimate_vertical_velocity(vertical_acceleration)
         vertical_position = self.estimate_vertical_position(vertical_velocity)
-        # TODO: potentially add bias adjusted trackers
 
         orientation[2] = vertical_position
         self.orientations_tracker.enqueue(orientation)
 
-        # TODO: Save stuff, move somewhere else
-        #########################################################################
-        # Store information on vertical acceleration for wave function estimation
-        self.vertical_acceleration[row_number] = vertical_acceleration
-        self.vertical_velocity[row_number] = vertical_velocity
-        self.vertical_position[row_number] = vertical_position
-
-        # In development mode, store information on vertical velocity for each time step
+        # In development mode, store information
         if self.dev_mode:
+            self.vertical_acceleration[row_number] = vertical_acceleration
+            self.vertical_velocity[row_number] = vertical_velocity
+            self.vertical_velocity_dampened[row_number] = vertical_velocity + self.biases[
+                cfg.vertical_velocity_identifier]
+
+            self.vertical_position[row_number] = vertical_position
+            self.vertical_position_dampened[row_number] = vertical_position + self.biases[
+                cfg.vertical_position_identifier]
+
             self.dev_vertical_velocity[row_number] = vertical_velocity
 
             self.vertical_vel_bias_array[row_number] = self.biases[cfg.vertical_velocity_identifier]
@@ -357,7 +350,6 @@ class FloatService:
         vertical_velocities = self.vertical_velocity_tracker.to_array()
 
         # If a number of rows equal to or greater than the threshold for updating bias has been reached, update bias
-        #print(vertical_velocities)
         bias = self.update_bias(cfg.vertical_velocity_identifier, vertical_velocities)
 
         if cfg.ignore_vertical_velocity_bias:
@@ -477,7 +469,6 @@ class FloatService:
     def get_processed_acc_input(self, imu_array: np.array):
         processed_input = np.empty((imu_array.shape[0], 3))
         processed_input[:, 0:2] = (imu_array[:, 0:2] - self.biases[0:2]) * cfg.gravitational_constant
-        print(self.biases[0:3])
         processed_input[:, 2] = imu_array[:, 2] * cfg.gravitational_constant
         return processed_input
 
@@ -525,6 +516,12 @@ class FloatService:
         # the damping factors of speed and velocity. These factors are then themselves dampened subsequently.
         self.pos_damping.boost()
         self.vel_damping.boost()
+
+    def handle_buffer_wrapping(self):
+        # Information on last actual buffer index is kept
+        self.last_valid = self.last_row
+        # Previously update_counters_on_buffer_reuse()
+        self.copy_data_to_last_index_on_buffer_reuse()
 
     def get_min_prev_array_size(self, input_size: int):
         return max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean, cfg.n_points_for_fft,
