@@ -228,12 +228,23 @@ if __name__ == '__main__':
     default_burst_size = 1000
     default_gui_enabled = True
 
+
+    def string_to_bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise parser.ArgumentTypeError('Boolean value expected.')
+
     # Create a CLI interface and set some default values
     parser = ArgumentParser("float-service-stats", description="Float Service Statistics")
     parser.add_argument("--data_path", help="The path to the HDF5 file containing the data", default=default_data_path)
     parser.add_argument("--sensor_id", default=default_sensor_id, help="The sensor ID number")
     parser.add_argument("--burst_size", default=default_burst_size, type=int, help="The burst size")
-    parser.add_argument("--gui", default=default_gui_enabled, type=bool, help="Display plots")
+    parser.add_argument("--gui", default=default_gui_enabled, type=string_to_bool, help="Display plots")
 
     # Parse and set the options
     args = parser.parse_args()
