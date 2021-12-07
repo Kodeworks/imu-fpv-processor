@@ -41,6 +41,7 @@ miniburst_size = 128
 # Tests show that the module handles 70% randomly placed NaN-values. Threshold is set to 50% to accommodate
 # for groupings of several NaN-values, which are more likely than a uniform distribution
 discard_burst_nan_threshold = 0.5
+allow_nan_for_bias = False
 
 # Adaptive Moving Average tuning
 adaptive_alpha_max = 0.5

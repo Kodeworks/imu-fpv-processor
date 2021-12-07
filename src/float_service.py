@@ -66,17 +66,14 @@ class FloatService:
         self.n_points_for_pos_mean = cfg.n_points_for_pos_mean_initial
 
         # Tracking of previous values
-        # TODO: create buffer with large size and wrapping at end (like it was)
         self.n_inputs = max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean)
-        self.input_tracker = CyclicArray(self.n_inputs, dimensions=6)
-        self.processed_input_tracker = CyclicArray(cfg.min_filter_size, dimensions=5)
-        self.vertical_acceleration_tracker = CyclicArray(cfg.n_points_for_acc_mean)
-        self.vertical_velocity_tracker = CyclicArray(cfg.n_points_for_vel_mean)
-        self.vertical_velocity_bias_adjusted_tracker = CyclicArray(cfg.n_points_for_vel_mean)
-
-        # TODO: size not constant
-        self.vertical_position_tracker = CyclicArray(self.n_points_for_pos_mean)
-        self.orientations_tracker = CyclicArray(cfg.min_filter_size, dimensions=3)
+        self.input_tracker = CyclicArray(self.input_length, dimensions=6)
+        self.processed_input_tracker = CyclicArray(self.input_length, dimensions=5)
+        self.vertical_acceleration_tracker = CyclicArray(self.input_length)
+        self.vertical_velocity_tracker = CyclicArray(self.input_length)
+        self.vertical_velocity_bias_adjusted_tracker = CyclicArray(self.input_length)
+        self.vertical_position_tracker = CyclicArray(self.input_length)
+        self.orientations_tracker = CyclicArray(self.input_length, dimensions=3)
 
         # damping factors to counteract integration drift (adjusted based on current best estimate)
         self.vel_damping = Damping(cfg.vel_damping_factor_initial, cfg.vel_minimum_damping,
@@ -133,12 +130,14 @@ class FloatService:
         for acc_identifier in cfg.acc_identifiers:
             self.bias_estimators[acc_identifier] = BiasEstimator(cfg.points_between_acc_bias_update,
                                                                  use_moving_average=True,
+                                                                 allow_nan=cfg.allow_nan_for_bias,
                                                                  track_bias=self.dev_mode)
 
         # Gyro biases
         for gyro_identifier in cfg.gyro_identifiers:
             self.bias_estimators[gyro_identifier] = BiasEstimator(cfg.points_between_gyro_bias_update,
                                                                   use_moving_average=True,
+                                                                  allow_nan=cfg.allow_nan_for_bias,
                                                                   track_bias=self.dev_mode)
 
         # Calculated vertical biases
@@ -223,14 +222,15 @@ class FloatService:
             self.burst_is_discarded = False
 
         # Update gyroscope and accelerometer bias
-        imu_data = self.input_tracker.to_array()
+        input_length = max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean)
+        imu_data = self.input_tracker.get_latest_n(input_length)
 
         for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifiers[0]:cfg.acc_identifiers[-1] + 1]):
-            bias_estimator.update(imu_data[:, cfg.acc_identifiers[idx]])
+            bias_estimator.update(imu_data[-cfg.n_points_for_acc_mean:, cfg.acc_identifiers[idx]])
 
         for idx, bias_estimator in enumerate(
                 self.bias_estimators[cfg.gyro_identifiers[0]:cfg.gyro_identifiers[-1] + 1]):
-            bias_estimator.update(imu_data[:, cfg.gyro_identifiers[idx]])
+            bias_estimator.update(imu_data[-cfg.n_points_for_gyro_mean:, cfg.gyro_identifiers[idx]])
 
         self.biases = np.array(list(bias.value() for bias in self.bias_estimators))
 
@@ -250,10 +250,10 @@ class FloatService:
 
         input_size = current_input.shape[0]
 
-        # self.processed_input_tracker.enqueue_n(processed_input)
         if input_size < cfg.min_filter_size:
-            processed_input = np.concatenate((self.processed_input_tracker.to_array(), processed_input))[
-                              -cfg.min_filter_size:]
+            remaining_size = cfg.min_filter_size - input_size
+            processed_input = np.concatenate(
+                (self.processed_input_tracker.get_latest_n(remaining_size), processed_input))
 
         return LowPassFilter.process(processed_input, self.low_a, self.low_b, input_size)
 
@@ -261,7 +261,7 @@ class FloatService:
 
         orientations = np.empty((processed_inputs.shape[0], 3))
         for row in range(processed_inputs.shape[0]):
-            prev_accelerations = self.vertical_acceleration_tracker.to_array()
+            prev_accelerations = self.vertical_acceleration_tracker.get_latest_n(cfg.n_points_for_acc_mean)
             self.wave_function(prev_accelerations)
 
             orientations[row] = self.estimate_pose(processed_inputs[row], start_row + row)
@@ -282,7 +282,7 @@ class FloatService:
             # self.orientation_mmap[row_no, 0:2]
             orientation[0:2] = self.kalman_filter.get_state_estimate()
         else:
-            prev_orientation = self.orientations_tracker.tail()
+            prev_orientation = self.orientations_tracker.get_tail()
             orientation[0:2] = self.estimate_angles_using_gyro(processed_input, prev_orientation)
             self.kalman_filter.state_posteriori = orientation[0:2]
 
@@ -342,12 +342,12 @@ class FloatService:
 
     def estimate_vertical_velocity(self, vertical_acceleration: int):
 
-        vertical_velocity = self.vertical_velocity_tracker.tail() + cfg.sampling_period * vertical_acceleration
+        vertical_velocity = self.vertical_velocity_tracker.get_tail() + cfg.sampling_period * vertical_acceleration
         # Vertical velocity is adjusted by a damping factor to compensate for integration drift
         vertical_velocity = vertical_velocity * (1 - self.vel_damping.value())
 
         self.vertical_velocity_tracker.enqueue(vertical_velocity)
-        vertical_velocities = self.vertical_velocity_tracker.to_array()
+        vertical_velocities = self.vertical_velocity_tracker.get_latest_n(cfg.n_points_for_vel_mean)
 
         # If a number of rows equal to or greater than the threshold for updating bias has been reached, update bias
         bias = self.update_bias(cfg.vertical_velocity_identifier, vertical_velocities)
@@ -364,14 +364,14 @@ class FloatService:
 
     def estimate_vertical_position(self, vertical_velocity: int):
         # Vertical position is updated using current vertical velocity
-        vertical_position = self.vertical_position_tracker.tail() + cfg.sampling_period * vertical_velocity
+        vertical_position = self.vertical_position_tracker.get_tail() + cfg.sampling_period * vertical_velocity
         # Vertical position is adjusted by a damping factor to compensate for integration drift
         vertical_position = vertical_position * (1 - self.pos_damping.value())
 
         self.vertical_position_tracker.enqueue(vertical_position)
 
         # If a number of rows equal to or greater than the threshold for updating  bias has been traversed, update bias
-        vertical_positions = self.vertical_position_tracker.to_array()
+        vertical_positions = self.vertical_position_tracker.get_latest_n(self.n_points_for_pos_mean)
         bias = self.update_bias(cfg.vertical_position_identifier, vertical_positions)
 
         # Vertical position is adjusted by the bias and stored as output
@@ -395,8 +395,9 @@ class FloatService:
 
         numb_current_orientations = current_orientations.shape[0]
         if numb_current_orientations < cfg.min_filter_size:
-            prev_orientations = self.orientations_tracker.to_array()
-            orientations = np.concatenate((prev_orientations, current_orientations))[-cfg.min_filter_size:]
+            remaining_values = cfg.min_filter_size - numb_current_orientations
+            prev_orientations = self.orientations_tracker.get_latest_n(remaining_values)
+            orientations = np.concatenate((prev_orientations, current_orientations))
         else:
             orientations = current_orientations
 
