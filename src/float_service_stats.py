@@ -239,6 +239,7 @@ if __name__ == '__main__':
         else:
             raise parser.ArgumentTypeError('Boolean value expected.')
 
+
     # Create a CLI interface and set some default values
     parser = ArgumentParser("float-service-stats", description="Float Service Statistics")
     parser.add_argument("--data_path", help="The path to the HDF5 file containing the data", default=default_data_path)
@@ -253,9 +254,10 @@ if __name__ == '__main__':
     burst_size = args.burst_size
     gui = args.gui
 
+    dev_mode = gui
     process_sim = ProcessSimulator(
         hdf5_path=data_path,
-        dev_mode=True
+        dev_mode=dev_mode
     )
 
     process_sim.all_bursts_single_float_service(sensor_id=sensor_id)

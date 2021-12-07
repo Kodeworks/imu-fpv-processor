@@ -14,12 +14,11 @@ from scipy.fft import fft
 from scipy.signal import butter
 
 import config as cfg
-from utils.cyclic_array import CyclicArray
 from utils.bias_estimator import BiasEstimator
+from utils.cyclic_array import CyclicArray
 from utils.damping import Damping
 from utils.kalman_filter import KalmanFilter
 from utils.low_pass_filter import LowPassFilter
-from utils.mem_map_utils import MemMapUtils
 from utils.nan_handling import NanHandling
 from utils.rotations import Rotations
 from utils.utils import Utils
@@ -63,10 +62,10 @@ class FloatService:
         self.biases = np.empty(shape=(9,), dtype=float)
 
         # Weights for weighted averages
-        self.n_points_for_pos_mean = cfg.n_points_for_pos_mean_initial
+        self.points_for_mean = cfg.points_for_mean
 
         # Tracking of previous values
-        self.n_inputs = max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean)
+        self.n_inputs = max(self.points_for_mean[cfg.acc_identifier], self.points_for_mean[cfg.gyro_identifier])
         self.input_tracker = CyclicArray(self.input_length, dimensions=6)
         self.processed_input_tracker = CyclicArray(self.input_length, dimensions=5)
         self.vertical_acceleration_tracker = CyclicArray(self.input_length)
@@ -160,7 +159,7 @@ class FloatService:
         :param number_of_rows: Number of input data rows to be processed.
         Format of output: N rows x [x-angle, y-angle, vertical position]
         """
-        orientations = np.empty((number_of_rows, 3))
+        orientations = np.empty(shape=(number_of_rows, 3))
 
         start, end, step = self.get_process_step(number_of_rows)
         for start_i in range(start, end, step):
@@ -178,8 +177,8 @@ class FloatService:
 
             if self.dev_mode:
                 self.processed_input[start_i:end_i] = processed_input
-                self.acc_bias_array[start - cfg.n_points_for_acc_mean:start] = self.biases[0:3]
-                self.gyro_bias_array[start - cfg.n_points_for_gyro_mean:start] = self.biases[3:5]
+                self.acc_bias_array[start - self.points_for_mean[cfg.acc_identifier]:start] = self.biases[0:3]
+                self.gyro_bias_array[start - self.points_for_mean[cfg.gyro_identifier]:start] = self.biases[3:5]
 
             orientations[start_i - start:end_i - start] = self.run_processing_iterations(processed_input, start_i)
 
@@ -222,15 +221,28 @@ class FloatService:
             self.burst_is_discarded = False
 
         # Update gyroscope and accelerometer bias
-        input_length = max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean)
-        imu_data = self.input_tracker.get_latest_n(input_length)
+        input_length = max(self.points_for_mean[cfg.acc_identifier], self.points_for_mean[cfg.gyro_identifier])
+        imu_data = np.empty(shape=(input_length, 6))
 
+        imu_history_fetched = False
         for idx, bias_estimator in enumerate(self.bias_estimators[cfg.acc_identifiers[0]:cfg.acc_identifiers[-1] + 1]):
-            bias_estimator.update(imu_data[-cfg.n_points_for_acc_mean:, cfg.acc_identifiers[idx]])
+            bias_estimator.update_counter(current_input.shape[0])
+
+            if bias_estimator.should_update():
+                if not imu_history_fetched:
+                    imu_history_fetched = True
+                    imu_data = self.input_tracker.get_latest_n(input_length)
+                bias_estimator.update(imu_data[-self.points_for_mean[cfg.acc_identifier]:, cfg.acc_identifiers[idx]])
 
         for idx, bias_estimator in enumerate(
                 self.bias_estimators[cfg.gyro_identifiers[0]:cfg.gyro_identifiers[-1] + 1]):
-            bias_estimator.update(imu_data[-cfg.n_points_for_gyro_mean:, cfg.gyro_identifiers[idx]])
+            bias_estimator.update_counter(current_input.shape[0])
+
+            if bias_estimator.should_update():
+                if not imu_history_fetched:
+                    imu_history_fetched = True
+                    imu_data = self.input_tracker.get_latest_n(input_length)
+                bias_estimator.update(imu_data[-self.points_for_mean[cfg.gyro_identifier]:, cfg.gyro_identifiers[idx]])
 
         self.biases = np.array(list(bias.value() for bias in self.bias_estimators))
 
@@ -261,7 +273,9 @@ class FloatService:
 
         orientations = np.empty((processed_inputs.shape[0], 3))
         for row in range(processed_inputs.shape[0]):
-            prev_accelerations = self.vertical_acceleration_tracker.get_latest_n(cfg.n_points_for_acc_mean)
+            # TODO: can be optimized
+            prev_accelerations = self.vertical_acceleration_tracker.get_latest_n(
+                self.points_for_mean[cfg.acc_identifier])
             self.wave_function(prev_accelerations)
 
             orientations[row] = self.estimate_pose(processed_inputs[row], start_row + row)
@@ -347,18 +361,22 @@ class FloatService:
         vertical_velocity = vertical_velocity * (1 - self.vel_damping.value())
 
         self.vertical_velocity_tracker.enqueue(vertical_velocity)
-        vertical_velocities = self.vertical_velocity_tracker.get_latest_n(cfg.n_points_for_vel_mean)
 
-        # If a number of rows equal to or greater than the threshold for updating bias has been reached, update bias
-        bias = self.update_bias(cfg.vertical_velocity_identifier, vertical_velocities)
+        bias = self.update_bias(cfg.vertical_velocity_identifier, self.vertical_velocity_tracker, 1)
 
         if cfg.ignore_vertical_velocity_bias:
             return vertical_velocity
         else:
             return vertical_velocity - bias
 
-    def update_bias(self, identifier, values):
-        self.bias_estimators[identifier].update(values)
+    def update_bias(self, identifier, cyclic_array, number_of_new_values):
+        # If a number of rows equal to or greater than the threshold for updating bias has been reached, update bias
+        self.bias_estimators[identifier].update_counter(number_of_new_values)
+
+        if self.bias_estimators[identifier].should_update():
+            values = cyclic_array.get_latest_n(self.points_for_mean[identifier])
+            self.bias_estimators[identifier].update(values)
+
         self.biases[identifier] = self.bias_estimators[identifier].value()
         return self.biases[identifier]
 
@@ -370,9 +388,7 @@ class FloatService:
 
         self.vertical_position_tracker.enqueue(vertical_position)
 
-        # If a number of rows equal to or greater than the threshold for updating  bias has been traversed, update bias
-        vertical_positions = self.vertical_position_tracker.get_latest_n(self.n_points_for_pos_mean)
-        bias = self.update_bias(cfg.vertical_position_identifier, vertical_positions)
+        bias = self.update_bias(cfg.vertical_position_identifier, self.vertical_position_tracker, 1)
 
         # Vertical position is adjusted by the bias and stored as output
         if cfg.ignore_vertical_position_bias:
@@ -445,7 +461,7 @@ class FloatService:
         new_n_data_points = int(cfg.sampling_rate * 1 / top_frequency)
         # Update bias control, as long as the period of the greatest amplitude is greater than some threshold
         if new_n_data_points > cfg.min_points_for_pos_mean:
-            self.n_points_for_pos_mean = new_n_data_points
+            self.points_for_mean[cfg.vertical_position_identifier] = new_n_data_points
 
             # print(f'When last row was {self.last_row}, pos bias window size set to {self.n_points_for_pos_mean}')
 
@@ -523,8 +539,3 @@ class FloatService:
         self.last_valid = self.last_row
         # Previously update_counters_on_buffer_reuse()
         self.copy_data_to_last_index_on_buffer_reuse()
-
-    def get_min_prev_array_size(self, input_size: int):
-        return max(cfg.n_points_for_acc_mean, cfg.n_points_for_gyro_mean, cfg.n_points_for_fft,
-                   cfg.n_points_for_vel_mean, cfg.n_points_for_vel_mean,
-                   cfg.min_filter_size, self.n_points_for_pos_mean) - input_size

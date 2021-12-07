@@ -3,6 +3,7 @@ import numpy as np
 import config as cfg
 from utils.adaptive_moving_average import AdaptiveMovingAverage
 
+
 class BiasEstimator:
     def __init__(self, points_between_updates: int, expected_value: int = 0.0, allow_nan=False,
                  use_moving_average: bool = False,
@@ -26,18 +27,20 @@ class BiasEstimator:
         else:
             self.mean = np.mean
 
+    def update_counter(self, n_new_measurements):
+        self.points_since_update += n_new_measurements
+
+    def should_update(self):
+        return self.points_since_update >= self.points_between_updates
+
     def update(self, measurements: np.array):
-        # Only update bias if enough data has arrived
-        if self.points_since_update >= self.points_between_updates:
-            self.points_since_update = 0
-            bias_sliding_window = self.mean(measurements, axis=0) - self.expected_value
-            if self.use_moving_average:
-                self.adaptive_bias.update(bias_sliding_window)
-                self.bias = self.adaptive_bias.get_state()
-            else:
-                self.bias = bias_sliding_window
+        self.points_since_update = 0
+        bias_sliding_window = self.mean(measurements, axis=0) - self.expected_value
+        if self.use_moving_average:
+            self.adaptive_bias.update(bias_sliding_window)
+            self.bias = self.adaptive_bias.get_state()
         else:
-            self.points_since_update += measurements.shape[0]
+            self.bias = bias_sliding_window
 
     def value(self):
         return self.bias

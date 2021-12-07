@@ -1,5 +1,6 @@
 # Contains all constants used throughout the project
 # Note: some values are calculated based on other constants
+import numpy as np
 
 # Physical constants
 gravitational_constant = 9.81
@@ -8,13 +9,29 @@ gravitational_constant = 9.81
 sampling_rate = 104.0
 sampling_period = 1.0 / sampling_rate
 
+# identifiers of measured and calculated values
+acc_x_identifier = 0
+acc_y_identifier = 1
+acc_z_identifier = 2
+acc_identifiers = [0, 1, 2]
+acc_identifier = 9
+
+gyro_x_identifier = 3
+gyro_y_identifier = 4
+gyro_z_identifier = 5
+gyro_identifiers = [3, 4, 5]
+gyro_identifier = 10
+
+vertical_acc_identifier = 6
+vertical_velocity_identifier = 7
+vertical_position_identifier = 8
+
 # Coordinate system transformations
 perform_axis_reversal = True
 gyro_reversal_coefficient = -1.0
 axis_reversal_coefficient = -1.0
 # With the current physical implementation, the y-axis (index 1) is reversed
 axis_reversal_index = 1
-
 
 # Damping of measurements
 # Initial values
@@ -47,12 +64,11 @@ allow_nan_for_bias = False
 adaptive_alpha_max = 0.5
 adaptive_alpha_gain = 0.01
 
-
 # Tuning
 # TODO: read file with tuning for each float
 
 
-# Bias 
+# Bias
 points_between_acc_bias_update = 256
 points_between_gyro_bias_update = 256
 points_between_vertical_acc_bias_update = 256
@@ -63,11 +79,20 @@ ignore_vertical_position_bias = False
 ignore_vertical_velocity_bias = False
 
 # Number of data points for calculating different means (prone to change)
-n_points_for_acc_mean = 4096
-n_points_for_gyro_mean = 4096
-n_points_for_proper_vert_acc_mean = 4096
-n_points_for_vel_mean = 512
-n_points_for_pos_mean_initial = 512
+points_for_mean = np.zeros(shape=(11,), dtype=int)
+points_for_acc_mean = 4096
+points_for_mean[acc_identifier] = points_for_acc_mean
+points_for_mean[acc_x_identifier] = points_for_acc_mean
+points_for_mean[acc_y_identifier] = points_for_acc_mean
+points_for_mean[acc_z_identifier] = points_for_acc_mean
+points_for_gyro_mean = 4096
+points_for_mean[gyro_identifier] = points_for_gyro_mean
+points_for_mean[gyro_x_identifier] = points_for_gyro_mean
+points_for_mean[gyro_y_identifier] = points_for_gyro_mean
+points_for_mean[gyro_z_identifier] = points_for_gyro_mean
+
+points_for_mean[vertical_velocity_identifier] = 512
+points_for_mean[vertical_position_identifier] = 512
 
 min_points_for_pos_mean = 128
 
@@ -87,18 +112,3 @@ fft_aided_bias = False
 
 # Output post processing
 use_output_filtering = True
-
-# identifiers of measured and calculated values
-acc_x_identifier = 0
-acc_y_identifier = 1
-acc_z_identifier = 2
-acc_identifiers = [0, 1, 2]
-
-gyro_x_identifier = 3
-gyro_y_identifier = 4
-gyro_z_identifier = 5
-gyro_identifiers = [3, 4, 5]
-
-vertical_acc_identifier = 6
-vertical_velocity_identifier = 7
-vertical_position_identifier = 8
