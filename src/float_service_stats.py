@@ -55,8 +55,8 @@ class FloatServiceStats:
     def plot_vertical_position(float_service: FloatService):
         plt.figure()
         plt.title('Vertical position')
-        z_pos_dampened, = plt.plot(float_service.dampened_vertical_position, c='b', label='Dampened vert. pos')
-        z_pos, = plt.plot(float_service.orientation_mmap[:, 2], c='g', label='Final vert. pos')
+        z_pos_dampened, = plt.plot(float_service.vertical_position_dampened, c='b', label='Dampened vert. pos')
+        z_pos, = plt.plot(float_service.vertical_position, c='g', label='Final vert. pos')
         z_pos_bias, = plt.plot(float_service.vertical_pos_bias_array, 'r:', label='Current vert. pos bias')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
         plt.legend(handles=[z_pos_dampened, z_pos, z_pos_bias])
@@ -65,8 +65,8 @@ class FloatServiceStats:
     def plot_vertical_velocity(float_service: FloatService):
         plt.figure()
         plt.title('Vertical velocity')
-        z_acc, = plt.plot(float_service.actual_vertical_acceleration, c='tab:orange', label='Final vert. acc')
-        z_vel_dampened, = plt.plot(float_service.dampened_vertical_velocity, c='b', label='Dampened vert. vel')
+        z_acc, = plt.plot(float_service.vertical_acceleration, c='tab:orange', label='Final vert. acc')
+        z_vel_dampened, = plt.plot(float_service.vertical_velocity_dampened, c='b', label='Dampened vert. vel')
         z_vel, = plt.plot(float_service.dev_vertical_velocity, c='g', label='Final vert. vel')
         z_vel_bias, = plt.plot(float_service.vertical_vel_bias_array, 'r:', label='Bias, dampened vert. vel')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
@@ -108,7 +108,7 @@ class FloatServiceStats:
         processed_z_acc, = plt.plot(float_service.processed_input[:, 2],
                                     c='tab:green',
                                     label='Local z-acc, processed')
-        actual_z_acc, = plt.plot(float_service.actual_vertical_acceleration,
+        actual_z_acc, = plt.plot(float_service.vertical_acceleration,
                                  c='tab:purple',
                                  label='Actual vert. acc')
         plt.plot([0, len(float_service.orientation_mmap)], [0.0, 0.0], 'k:')
@@ -138,12 +138,12 @@ class FloatServiceStats:
         nvap, = plt.plot(na_vert_acc_fft_x, na_vert_acc_fft_y, c='xkcd:blue', label='Raw Z-axis acceleration')
 
         # Vertical acceleration
-        input_arr = fls.actual_vertical_acceleration[offset:cutoff]
+        input_arr = fls.vertical_acceleration[offset:cutoff]
         vert_acc_fft_x, vert_acc_fft_y = FloatServiceStats.fft_spectrum(arr=input_arr, freq=freq)
         vap, = plt.plot(vert_acc_fft_x, vert_acc_fft_y, c='xkcd:light blue', label='Vertical acceleration')
 
         # Dampened vertical velocity
-        input_arr = fls.dampened_vertical_velocity[offset:cutoff]
+        input_arr = fls.vertical_velocity[offset:cutoff]
         vert_vel_dampened_fft_x, vert_vel_dampened_fft_y = FloatServiceStats.fft_spectrum(arr=input_arr, freq=freq)
         vvdp, = plt.plot(vert_vel_dampened_fft_x, vert_vel_dampened_fft_y, c='xkcd:red',
                          label='Dampened vertical velocity')
@@ -155,7 +155,7 @@ class FloatServiceStats:
                          label='Final vertical velocity')
 
         # Dampened vertical position
-        input_arr = fls.dampened_vertical_position[offset:cutoff]
+        input_arr = fls.vertical_position[offset:cutoff]
         vert_pos_dampened_fft_x, vert_pos_dampened_fft_y = FloatServiceStats.fft_spectrum(arr=input_arr, freq=freq)
         vpdp, = plt.plot(vert_pos_dampened_fft_x, vert_pos_dampened_fft_y, c='xkcd:dark green',
                          label='Dampened vertical position')
@@ -226,25 +226,44 @@ if __name__ == '__main__':
     default_data_path = str(data / "wave_like_office_generated_data_210507_1529.hdf5")
     default_sensor_id = "5"
     default_burst_size = 1000
+    default_gui_enabled = True
+
+
+    def string_to_bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise parser.ArgumentTypeError('Boolean value expected.')
+
 
     # Create a CLI interface and set some default values
     parser = ArgumentParser("float-service-stats", description="Float Service Statistics")
     parser.add_argument("--data_path", help="The path to the HDF5 file containing the data", default=default_data_path)
-    parser.add_argument("--sensor_id", default="5", help="The sensor ID number")
-    parser.add_argument("--burst_size", default=1000, type=int, help="The burst size")
+    parser.add_argument("--sensor_id", default=default_sensor_id, help="The sensor ID number")
+    parser.add_argument("--burst_size", default=default_burst_size, type=int, help="The burst size")
+    parser.add_argument("--gui", default=default_gui_enabled, type=string_to_bool, help="Display plots")
 
     # Parse and set the options
     args = parser.parse_args()
     data_path = args.data_path
     sensor_id = args.sensor_id
     burst_size = args.burst_size
+    gui = args.gui
 
+    dev_mode = gui
     process_sim = ProcessSimulator(
         hdf5_path=data_path,
-        dev_mode=True
+        dev_mode=dev_mode
     )
 
     process_sim.all_bursts_single_float_service(sensor_id=sensor_id)
+
+    if not gui:
+        exit(0)
 
     FloatServiceStats.plot_biases_in_float_service(process_sim.float_services[sensor_id])
     FloatServiceStats.plot_vertical_position(process_sim.float_services[sensor_id])

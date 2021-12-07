@@ -5,13 +5,13 @@ class Damping:
         self.damping = initial_damping
 
         # TODO: should any of these values come from config?
-        self.damping_increment = damping_increment
+        self.minimum_damping = damping_increment
         self.max_damping = max_damping
         self.damping_factor_damping = damping_factor_damping
 
     def update(self):
         self.damping -= self.damping_factor_damping * (self.damping -
-                                                       self.damping_increment)
+                                                       self.minimum_damping)
 
     def boost(self, new_damping: float = 0.0):
         if new_damping > 0.0:

@@ -3,7 +3,7 @@ import numpy as np
 
 class Rotations:
     @staticmethod
-    def bank_angle(self, angle_x, angle_y):
+    def bank_angle(angle_x, angle_y):
         return np.arctan(np.sqrt(np.tan(angle_x) ** 2 + np.tan(angle_y) ** 2))
 
     @staticmethod
