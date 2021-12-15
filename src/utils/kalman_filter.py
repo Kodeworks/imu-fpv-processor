@@ -50,7 +50,7 @@ class KalmanFilter:
         self.set_aposteriori_uncertainty()
 
         if self.dev_mode:
-            self.row_number += 1
+            self.row_number += self.rows_per_kalman_use
 
     def project_state(self, processed_input: np.array):
         # Data merge row number

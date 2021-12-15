@@ -5,7 +5,7 @@ from utils.adaptive_moving_average import AdaptiveMovingAverage
 
 
 class BiasEstimator:
-    def __init__(self, points_between_updates: int, expected_value: int = 0.0, allow_nan=False,
+    def __init__(self, points_between_updates: int, expected_value: float = 0.0, allow_nan=False,
                  use_moving_average: bool = False,
                  track_bias: bool = False):
 

@@ -511,13 +511,13 @@ class FloatService:
         # Set processed input
         empty_inputs = np.empty((end - start, 5)) * np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
         self.processed_input_tracker.enqueue_n(empty_inputs)
-        self.processed_input[start:end, 0:5] = np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
         self.vertical_acceleration[start:end] = 0.0
         self.vertical_velocity[start:end] = self.biases[cfg.vertical_velocity_identifier]
         self.vertical_position[start:end] = self.biases[cfg.vertical_position_identifier]
 
         # Set dev_mode storage
         if self.dev_mode:
+            self.processed_input[start:end, 0:5] = np.array([0.0, 0.0, -cfg.gravitational_constant, 0.0, 0.0])
             self.dev_vertical_velocity[start:end] = 0.0
             self.dev_gyro_state[start:end] = 0.0
             self.dev_acc_state[start:end] = 0.0
