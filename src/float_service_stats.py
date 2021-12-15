@@ -260,7 +260,7 @@ if __name__ == '__main__':
         dev_mode=dev_mode
     )
 
-    process_sim.all_bursts_single_float_service(sensor_id=sensor_id)
+    process_sim.all_bursts_single_float_service(sensor_id=sensor_id, time_processing=True)
 
     if not gui:
         exit(0)
