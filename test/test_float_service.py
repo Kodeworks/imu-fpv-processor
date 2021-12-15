@@ -4,8 +4,9 @@ from scipy.signal import butter, filtfilt
 #
 # from src import float_service as fs, float_service_dev_utils as fsdu, globals as g
 
-import src.float_service as fs
-import src.float_service_utils as fsdu
+import float_service as fs
+import utils.kalman_filter
+import utils.rotations
 
 # def test_low_pass_filter_input():
 #     # TODO: FIX test. processed_input and input cannot be compared the way it is being done
@@ -178,6 +179,7 @@ import src.float_service_utils as fsdu
 #     #                                 f'{dc_tests_passed}/{data_cleaning_tests} tests passed.\n')
 
 
+
 def test_nan_handling():
     print('----nan_smoothing_test()----')
     err_msg = ''
@@ -348,28 +350,28 @@ def test_discard_burst():
     assert n_passed == n_tests
 
 
-def test_adjust_pos_and_vel_dampening_factors():
-    print('----adjust_pos_and_vel_dampening_factors_test()----')
+def test_adjust_pos_and_vel_damping_factors():
+    print('----adjust_pos_and_vel_damping_factors_test()----')
     data_size = 100
     mock_input = np.zeros(shape=(data_size, 6), dtype=float)
     output = np.zeros(shape=(data_size, 3), dtype=float)
     name = 'Copernicus'
     float_service = fs.FloatService(name=name, input=mock_input, output=output, dev_mode=True)
 
-    # Set dampening factors to max
-    float_service.vel_dampening_factor = float_service.vel_dampening_factor_big
-    float_service.pos_dampening_factor = float_service.pos_dampening_factor_big
+    # Set damping factors to max
+    float_service.vel_damping_factor = float_service.vel_damping_factor_big
+    float_service.pos_damping_factor = float_service.pos_damping_factor_big
 
-    vdf = float_service.vel_dampening_factor
-    pdf = float_service.pos_dampening_factor
+    vdf = float_service.vel_damping_factor
+    pdf = float_service.pos_damping_factor
     for i in range(data_size-1):
         float_service.process(number_of_rows=1)
-        assert vdf >= float_service.vel_dampening_factor
-        assert pdf >= float_service.pos_dampening_factor
-        vdf = float_service.vel_dampening_factor
-        pdf = float_service.pos_dampening_factor
+        assert vdf >= float_service.vel_damping_factor
+        assert pdf >= float_service.pos_damping_factor
+        vdf = float_service.vel_damping_factor
+        pdf = float_service.pos_damping_factor
 
-    print('----adjust_pos_and_vel_dampening_factors_test() ended----\n')
+    print('----adjust_pos_and_vel_damping_factors_test() ended----\n')
 
 
 def test_boost_dampeners():
@@ -381,23 +383,23 @@ def test_boost_dampeners():
     err_msg = ''
     passed = True
 
-    # 1. Setting dampening factors to custom value
+    # 1. Setting damping factors to custom value
     float_service = fs.FloatService(name=name, input=mock_input, output=output)
-    vdf = float_service.vel_dampening_factor
-    pdf = float_service.pos_dampening_factor
-    float_service.boost_dampeners(vel_dampening_factor=2*vdf, pos_dampening_factor=2*pdf)
-    if vdf > float_service.vel_dampening_factor\
-            or pdf > float_service.pos_dampening_factor:
+    vdf = float_service.vel_damping_factor
+    pdf = float_service.pos_damping_factor
+    float_service.boost_dampeners(vel_damping_factor=2*vdf, pos_damping_factor=2*pdf)
+    if vdf > float_service.vel_damping_factor\
+            or pdf > float_service.pos_damping_factor:
         passed = False
-        err_msg += '\n- 1. Custom value dampening factor'
+        err_msg += '\n- 1. Custom value damping factor'
 
-    # 2. Setting dampening factors to default value
+    # 2. Setting damping factors to default value
     float_service = fs.FloatService(name=name, input=mock_input, output=output)
     float_service.boost_dampeners()
-    if not(float_service.vel_dampening_factor_big == float_service.vel_dampening_factor and
-           float_service.pos_dampening_factor_big == float_service.pos_dampening_factor):
+    if not(float_service.vel_damping_factor_big == float_service.vel_damping_factor and
+           float_service.pos_damping_factor_big == float_service.pos_damping_factor):
         passed = False
-        err_msg += '\n- 2. Default value dampening factor'
+        err_msg += '\n- 2. Default value damping factor'
 
     print(err_msg)
     print('----boost_dampeners_test() ended----\n')
@@ -413,12 +415,12 @@ def test_set_position_average_weights():
     float_service = fs.FloatService(name=name, input=sensor_input, output=sensor_output, dev_mode=True)
     pos_mean_window_len = float_service.n_points_for_pos_mean
 
-    assert pos_mean_window_len == len(float_service.vert_pos_average_weights)
+    assert pos_mean_window_len == len(float_service.get_position_averaging_weights())
 
     new_pos_mean_window_len = 350
     float_service.n_points_for_pos_mean = new_pos_mean_window_len
-    float_service.set_position_average_weights()
-    assert new_pos_mean_window_len == len(float_service.vert_pos_average_weights)
+    weights = float_service.get_position_averaging_weights()
+    assert new_pos_mean_window_len == len(weights)
 
     print('----set_position_average_weights_test() ended----\n')
 
@@ -446,10 +448,10 @@ def test_kalman_project_state():
     float_service.points_between_gyro_bias_update = np.inf
 
     # Mock input manipulation
-    float_service.input[:, 2] = 1.0
+    float_service.imu_mmap[:, 2] = 1.0
     float_service.process(number_of_rows=data_size)
     passed = True
-    for i in range(len(float_service.output)):
+    for i in range(len(float_service.orientation_mmap)):
         # This test expects the acceleration induced angles to be 0.0
         if float_service.dev_gyro_state[i, 0] != 0.0 \
                 or float_service.dev_gyro_state[i, 1] != 0.0:
@@ -475,7 +477,7 @@ def test_kalman_project_state():
     input_burst[:, 3] = - 1.0
     float_service.points_between_gyro_bias_update = np.inf
     passed = True
-    for i in range(len(float_service.output)-1):
+    for i in range(len(float_service.orientation_mmap) - 1):
         # Check that the next gyro induced state has a greater x-angle than the last
         if float_service.dev_gyro_state[i+1, 0] < \
                 float_service.dev_gyro_state[i, 0]:
@@ -516,10 +518,10 @@ def test_kalman_z():
     float_service.points_between_acc_bias_update = np.inf
 
     # Mock input manipulation
-    float_service.input[:, 2] = 1.0
+    float_service.imu_mmap[:, 2] = 1.0
     float_service.process(number_of_rows=data_size)
     passed = True
-    for i in range(len(float_service.output)):
+    for i in range(len(float_service.orientation_mmap)):
         # This test expects the acceleration induced angles to be 0.0
         if float_service.dev_acc_state[i, 0] != 0.0 \
                 or float_service.dev_acc_state[i, 1] != 0.0:
@@ -543,14 +545,14 @@ def test_kalman_z():
     float_service.rows_per_kalman_use = 1
 
     # Mock input manipulation
-    float_service.input[:, 0] = np.sin(timestamps)
+    float_service.imu_mmap[:, 0] = np.sin(timestamps)
     # Y-axis flipped
-    float_service.input[:, 1] = - np.cos(timestamps)
+    float_service.imu_mmap[:, 1] = - np.cos(timestamps)
     float_service.process(number_of_rows=data_size)
     passed = True
-    for i in range(len(float_service.output)):
+    for i in range(len(float_service.orientation_mmap)):
         # This test expects the absolute value of the acceleration tests to
-        if abs(float_service.input[i, 0]) > abs(float_service.input[i, 1]) and \
+        if abs(float_service.imu_mmap[i, 0]) > abs(float_service.imu_mmap[i, 1]) and \
                 abs(float_service.dev_acc_state[i, 0]) > \
                 abs(float_service.dev_acc_state[i, 1]):
             err_msg += '- 2.1 Moving sensor, absolute value\n'
@@ -577,7 +579,8 @@ def test_get_corrected_angle():
                      0.75 * pi]
 
     for i in range(len(input_angles)):
-        assert abs(fs.KalmanFilter.get_corrected_angle(input_angles[i]) - output_angles[i]) < 0.00001
+        assert abs(
+            utils.kalman_filter.KalmanFilter.get_corrected_angle(input_angles[i]) - output_angles[i]) < 0.00001
 
 
 def test_rotate_system():
@@ -715,7 +718,7 @@ def test_rotate_system():
     rotation_tests = 0
     passed_rotation_tests = 0
 
-    float_service = fs.Rotations()
+    float_service = utils.rotations.Rotations()
 
     #                                          Testing no rotation
 

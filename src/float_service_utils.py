@@ -1,4 +1,4 @@
-from src import float_service as fs
+import float_service as fs
 
 import time
 import sys
