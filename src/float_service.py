@@ -296,7 +296,7 @@ class FloatService:
             # self.orientation_mmap[row_no, 0:2]
             orientation[0:2] = self.kalman_filter.get_state_estimate()
         else:
-            prev_orientation = self.orientations_tracker.get_tail()
+            prev_orientation = self.orientations_tracker.get_item_at_tail()
             orientation[0:2] = self.estimate_angles_using_gyro(processed_input, prev_orientation)
             self.kalman_filter.state_posteriori = orientation[0:2]
 
@@ -356,7 +356,7 @@ class FloatService:
 
     def estimate_vertical_velocity(self, vertical_acceleration: int):
 
-        vertical_velocity = self.vertical_velocity_tracker.get_tail() + cfg.sampling_period * vertical_acceleration
+        vertical_velocity = self.vertical_velocity_tracker.get_item_at_tail() + cfg.sampling_period * vertical_acceleration
         # Vertical velocity is adjusted by a damping factor to compensate for integration drift
         vertical_velocity = vertical_velocity * (1 - self.vel_damping.value())
 
@@ -382,7 +382,7 @@ class FloatService:
 
     def estimate_vertical_position(self, vertical_velocity: int):
         # Vertical position is updated using current vertical velocity
-        vertical_position = self.vertical_position_tracker.get_tail() + cfg.sampling_period * vertical_velocity
+        vertical_position = self.vertical_position_tracker.get_item_at_tail() + cfg.sampling_period * vertical_velocity
         # Vertical position is adjusted by a damping factor to compensate for integration drift
         vertical_position = vertical_position * (1 - self.pos_damping.value())
 

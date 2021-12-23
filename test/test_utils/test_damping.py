@@ -1,5 +1,3 @@
-import pytest
-
 from src.utils.damping import Damping
 
 
