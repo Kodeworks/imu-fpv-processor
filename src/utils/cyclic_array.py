@@ -8,27 +8,27 @@ class CyclicArray:
         self.tail: int = length - 1
         self.wrapped = False
         self.dimensions = dimensions
-        if not initial_array:
+        if initial_array is None:
             if dimensions == 1:
                 shape = (length,)
             else:
                 shape = (length, dimensions)
 
-            self.queue = np.zeros(shape, dtype=float)
+            self.queue = np.zeros(shape=shape, dtype=float)
             return
 
         initial_array_length = initial_array.shape[0]
         if initial_array_length == length:
-            self.queue = np.array(initial_array, dtype=float)
+            self.queue = np.array(object=initial_array, dtype=float)
         elif initial_array_length > length:
-            self.queue = np.array(initial_array[initial_array_length - length:], dtype=float)
+            self.queue = np.array(object=initial_array[initial_array_length - length:], dtype=float)
         else:
             if dimensions == 1:
                 zeros_shape = (length - initial_array_length,)
             else:
                 zeros_shape = (length - initial_array_length, dimensions)
-            self.queue = np.append(np.array(initial_array, dtype=float),
-                                   np.zeros(zeros_shape, dtype=float))
+            self.queue = np.append(np.array(object=initial_array, dtype=float),
+                                   np.zeros(shape=zeros_shape, dtype=float))
             self.tail = initial_array_length - 1
 
     def size(self) -> int:
@@ -86,7 +86,7 @@ class CyclicArray:
             head = 0
         return self.queue[head]
 
-    def get_tail(self):
+    def get_item_at_tail(self):
         return self.queue[self.tail]
 
     def replace_item_at(self, index: int, new_value: float):
