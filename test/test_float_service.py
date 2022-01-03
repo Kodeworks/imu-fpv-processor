@@ -4,7 +4,7 @@ from scipy.signal import butter, filtfilt
 #
 # from src import float_service as fs, float_service_dev_utils as fsdu, globals as g
 
-import float_service as fs
+import src.float_service as fs
 import utils.kalman_filter
 import utils.rotations
 

@@ -14,3 +14,4 @@ def test_init_with_same_length():
     assert cyclic_array.size() == np.shape(cyclic_array.queue)[0]
     assert cyclic_array.tail == np.shape(cyclic_array.queue)[0] - 1
     assert cyclic_array.dimensions == dimensions
+
