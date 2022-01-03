@@ -1,7 +1,7 @@
 import numpy as np
 
-import config as cfg
-from utils.adaptive_moving_average import AdaptiveMovingAverage
+import src.config as cfg
+from src.utils.adaptive_moving_average import AdaptiveMovingAverage
 
 
 class BiasEstimator:
